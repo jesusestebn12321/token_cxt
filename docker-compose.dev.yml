@@ -1,0 +1,25 @@
+# Override de desarrollo: hot reload + Swagger + MongoDB accesible desde el host.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  mongo:
+    ports:
+      # Solo loopback: para Compass/mongosh. URI: mongodb://root:<pass>@localhost:27017/?authSource=admin&directConnection=true
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+
+  api:
+    build:
+      context: .
+      target: dev
+    image: rwa-backoffice:dev
+    command: ["npm", "run", "start:dev"]
+    environment:
+      NODE_ENV: development
+      SWAGGER_ENABLED: "true"
+      # Los eventos de archivos no siempre cruzan el bind-mount en Windows/macOS
+      TSC_WATCHFILE: PriorityPollingInterval
+    volumes:
+      - ./src:/app/src
+      - ./tsconfig.json:/app/tsconfig.json:ro
+      - ./tsconfig.build.json:/app/tsconfig.build.json:ro
+      - ./nest-cli.json:/app/nest-cli.json:ro
+      - /app/node_modules # conserva los node_modules instalados en la imagen
