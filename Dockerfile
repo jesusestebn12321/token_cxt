@@ -32,6 +32,10 @@ FROM base AS production
 ENV NODE_ENV=production \
     PORT=3000
 
+# La app se ejecuta con `node` directamente: npm/corepack no hacen falta en runtime.
+# Quitarlos reduce la superficie de ataque (sus dependencias internas aparecen en los escaneos).
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+
 COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./
