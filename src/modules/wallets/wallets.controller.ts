@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -28,25 +29,25 @@ export class WalletsController {
 
   @Get(':id')
   @Permissions(Permission.WALLETS_READ)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.walletsService.findOne(id);
   }
 
   @Get(':id/balances')
   @Permissions(Permission.WALLETS_READ)
-  balances(@Param('id', ParseUUIDPipe) id: string) {
+  balances(@Param('id', ParseObjectIdPipe) id: string) {
     return this.walletsService.getBalances(id);
   }
 
   @Get(':id/locks')
   @Permissions(Permission.WALLETS_READ)
-  locks(@Param('id', ParseUUIDPipe) id: string) {
+  locks(@Param('id', ParseObjectIdPipe) id: string) {
     return this.walletsService.getLocks(id);
   }
 
   @Get(':id/ledger')
   @Permissions(Permission.LEDGER_READ)
-  ledger(@Param('id', ParseUUIDPipe) id: string, @Query() query: PaginationQueryDto) {
+  ledger(@Param('id', ParseObjectIdPipe) id: string, @Query() query: PaginationQueryDto) {
     return this.ledgerService.findByWallet(id, query);
   }
 
@@ -54,7 +55,7 @@ export class WalletsController {
   @Permissions(Permission.WALLETS_LOCK_FUNDS)
   @UseGuards(TwoFactorGuard)
   @AuditAction('WALLET_FREEZE_CHANGED', 'wallet')
-  freeze(@Param('id', ParseUUIDPipe) id: string, @Body() dto: FreezeWalletDto) {
+  freeze(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: FreezeWalletDto) {
     return this.walletsService.setFrozen(id, dto);
   }
 
@@ -63,7 +64,7 @@ export class WalletsController {
   @UseGuards(TwoFactorGuard)
   @AuditAction('FUNDS_LOCKED', 'wallet')
   lockFunds(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: LockFundsDto,
     @CurrentUser('id') adminId: string,
   ) {
@@ -74,7 +75,7 @@ export class WalletsController {
   @Permissions(Permission.WALLETS_LOCK_FUNDS)
   @UseGuards(TwoFactorGuard)
   @AuditAction('FUNDS_RELEASED', 'wallet')
-  releaseLock(@Param('lockId', ParseUUIDPipe) lockId: string, @CurrentUser('id') adminId: string) {
+  releaseLock(@Param('lockId', ParseObjectIdPipe) lockId: string, @CurrentUser('id') adminId: string) {
     return this.walletsService.releaseLock(lockId, adminId);
   }
 }

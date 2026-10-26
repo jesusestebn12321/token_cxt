@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
-import { AssetClass } from '../entities/token.entity';
+import { AssetClass } from '../schemas/token.schema';
 
 export class CreateTokenDto {
   @ApiProperty({ example: 'RWAHOUSE1' })
@@ -29,7 +29,7 @@ export class CreateTokenDto {
   @Max(18)
   decimals?: number;
 
-  @ApiProperty({ example: '1000000', description: 'Suministro m√°ximo (entero, como string)' })
+  @ApiProperty({ example: '1000000', description: 'Suministro m·ximo (entero, como string)' })
   @IsString()
   @Matches(/^[1-9]\d{0,37}$/, { message: 'maxSupply debe ser un entero positivo' })
   maxSupply!: string;

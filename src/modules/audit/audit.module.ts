@@ -1,12 +1,12 @@
 import { Global, Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { MongooseModule } from '@nestjs/mongoose';
 import { AuditController } from './audit.controller';
 import { AuditService } from './audit.service';
-import { AuditLog } from './entities/audit-log.entity';
+import { AuditLog, AuditLogSchema } from './schemas/audit-log.schema';
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([AuditLog])],
+  imports: [MongooseModule.forFeature([{ name: AuditLog.name, schema: AuditLogSchema }])],
   controllers: [AuditController],
   providers: [AuditService],
   exports: [AuditService],

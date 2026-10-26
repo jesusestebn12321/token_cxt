@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
-import { ContractStandard } from '../entities/smart-contract.entity';
+import { ContractStandard } from '../schemas/smart-contract.schema';
 
 export class RegisterContractDto {
   @ApiProperty({ example: 11155111 })
@@ -10,7 +10,7 @@ export class RegisterContractDto {
 
   @ApiProperty({ example: '0x0000000000000000000000000000000000000000' })
   @IsString()
-  @Matches(/^0x[a-fA-F0-9]{40}$/, { message: 'address EVM inv√°lida' })
+  @Matches(/^0x[a-fA-F0-9]{40}$/, { message: 'address EVM inv·lida' })
   address!: string;
 
   @ApiProperty({ enum: ContractStandard })

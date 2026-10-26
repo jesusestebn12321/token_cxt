@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -27,7 +28,7 @@ export class TransactionsController {
 
   @Get(':id')
   @Permissions(Permission.TRANSACTIONS_READ)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.transactionsService.findOne(id);
   }
 
@@ -36,7 +37,7 @@ export class TransactionsController {
   @UseGuards(TwoFactorGuard)
   @AuditAction('TRANSACTION_DECISION', 'transaction')
   decide(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: DecideTransactionDto,
     @CurrentUser('id') approverId: string,
   ) {

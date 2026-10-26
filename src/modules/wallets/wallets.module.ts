@@ -1,15 +1,22 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { Balance } from './entities/balance.entity';
-import { FundLock } from './entities/fund-lock.entity';
-import { LedgerEntry } from './entities/ledger-entry.entity';
-import { Wallet } from './entities/wallet.entity';
+import { MongooseModule } from '@nestjs/mongoose';
 import { LedgerService } from './ledger.service';
+import { Balance, BalanceSchema } from './schemas/balance.schema';
+import { FundLock, FundLockSchema } from './schemas/fund-lock.schema';
+import { LedgerEntry, LedgerEntrySchema } from './schemas/ledger-entry.schema';
+import { Wallet, WalletSchema } from './schemas/wallet.schema';
 import { WalletsController } from './wallets.controller';
 import { WalletsService } from './wallets.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Wallet, Balance, FundLock, LedgerEntry])],
+  imports: [
+    MongooseModule.forFeature([
+      { name: Wallet.name, schema: WalletSchema },
+      { name: Balance.name, schema: BalanceSchema },
+      { name: FundLock.name, schema: FundLockSchema },
+      { name: LedgerEntry.name, schema: LedgerEntrySchema },
+    ]),
+  ],
   controllers: [WalletsController],
   providers: [WalletsService, LedgerService],
   exports: [WalletsService, LedgerService],

@@ -1,17 +1,17 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService, JwtSignOptions } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomUUID } from 'crypto';
-import { IsNull, Repository } from 'typeorm';
-import { Permission } from '../../common/enums/permission.enum';
+import { Model } from 'mongoose';
+import { oid } from '../../common/database/object-id';
 import { Role } from '../../common/enums/role.enum';
 import { JwtPayload } from '../../common/interfaces/jwt-payload.interface';
 import { AuditService } from '../audit/audit.service';
-import { User } from '../users/entities/user.entity';
+import { UserDocument } from '../users/schemas/user.schema';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
-import { RefreshToken } from './entities/refresh-token.entity';
+import { RefreshToken } from './schemas/refresh-token.schema';
 import { TwoFactorService } from './two-factor/two-factor.service';
 
 export interface RequestContext {
@@ -48,37 +48,39 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
-    @InjectRepository(RefreshToken) private readonly refreshRepo: Repository<RefreshToken>,
+    @InjectModel(RefreshToken.name) private readonly refreshModel: Model<RefreshToken>,
   ) {}
 
-  // ── Login ──────────────────────────────────────────────────────
+  // -- Login ------------------------------------------------------
   async login(dto: LoginDto, ctx: RequestContext): Promise<LoginResult> {
     const user = await this.usersService.findByEmailWithSecrets(dto.email);
 
     if (!user || !user.isActive) {
       await this.auditLogin('LOGIN_FAILED', null, dto.email, ctx, { reason: 'unknown_or_inactive' });
-      throw new UnauthorizedException('Credenciales inválidas');
+      throw new UnauthorizedException('Credenciales inv�lidas');
     }
+    const userId = user.id as string;
+
     if (this.usersService.isLocked(user)) {
-      await this.auditLogin('LOGIN_BLOCKED', user.id, user.email, ctx, { reason: 'locked' });
+      await this.auditLogin('LOGIN_BLOCKED', userId, user.email, ctx, { reason: 'locked' });
       throw new UnauthorizedException('Cuenta bloqueada temporalmente');
     }
     if (!(await this.usersService.verifyPassword(dto.password, user.passwordHash))) {
       await this.usersService.registerFailedLogin(user);
-      await this.auditLogin('LOGIN_FAILED', user.id, user.email, ctx, { reason: 'bad_password' });
-      throw new UnauthorizedException('Credenciales inválidas');
+      await this.auditLogin('LOGIN_FAILED', userId, user.email, ctx, { reason: 'bad_password' });
+      throw new UnauthorizedException('Credenciales inv�lidas');
     }
 
     if (user.twoFactorEnabled) {
       const twoFactorToken = await this.jwt.signAsync(
-        { sub: user.id, type: '2fa' } satisfies TwoFactorPayload,
+        { sub: userId, type: '2fa' } satisfies TwoFactorPayload,
         this.signOptions('jwt.accessSecret', 'jwt.twoFactorExpiresIn'),
       );
       return { requiresTwoFactor: true, twoFactorToken };
     }
 
-    await this.usersService.registerSuccessfulLogin(user.id);
-    await this.auditLogin('LOGIN_SUCCESS', user.id, user.email, ctx, { twoFactor: false });
+    await this.usersService.registerSuccessfulLogin(userId);
+    await this.auditLogin('LOGIN_SUCCESS', userId, user.email, ctx, { twoFactor: false });
     return { requiresTwoFactor: false, ...(await this.issueTokens(user, false, ctx)) };
   }
 
@@ -94,95 +96,99 @@ export class AuthService {
     );
     const user = await this.usersService.findByIdWithSecrets(payload.sub);
     if (!user || !user.isActive || !user.twoFactorSecret) {
-      throw new UnauthorizedException('Sesión inválida');
+      throw new UnauthorizedException('Sesi�n inv�lida');
     }
+    const userId = user.id as string;
+
     if (!this.twoFactorService.verify(code, user.twoFactorSecret)) {
       await this.usersService.registerFailedLogin(user);
-      await this.auditLogin('LOGIN_2FA_FAILED', user.id, user.email, ctx, {});
-      throw new UnauthorizedException('Código 2FA inválido');
+      await this.auditLogin('LOGIN_2FA_FAILED', userId, user.email, ctx, {});
+      throw new UnauthorizedException('C�digo 2FA inv�lido');
     }
 
-    await this.usersService.registerSuccessfulLogin(user.id);
-    await this.auditLogin('LOGIN_SUCCESS', user.id, user.email, ctx, { twoFactor: true });
+    await this.usersService.registerSuccessfulLogin(userId);
+    await this.auditLogin('LOGIN_SUCCESS', userId, user.email, ctx, { twoFactor: true });
     return this.issueTokens(user, true, ctx);
   }
 
-  // ── Refresh / logout ───────────────────────────────────────────
+  // -- Refresh / logout -------------------------------------------
   async refresh(refreshToken: string, ctx: RequestContext): Promise<TokenPair> {
     const payload = await this.verifyToken<RefreshPayload>(
       refreshToken,
       'jwt.refreshSecret',
       'refresh',
     );
-    const stored = await this.refreshRepo.findOne({
-      where: { tokenHash: this.hash(refreshToken) },
-    });
-    if (!stored) throw new UnauthorizedException('Refresh token desconocido');
+    const tokenHash = this.hash(refreshToken);
 
-    // Reutilización de un token ya rotado => posible robo: se revoca toda la familia
-    if (stored.revokedAt) {
-      await this.revokeAllForUser(stored.userId);
-      throw new UnauthorizedException('Refresh token reutilizado; sesiones revocadas');
-    }
-    if (stored.expiresAt.getTime() < Date.now()) {
-      throw new UnauthorizedException('Refresh token expirado');
+    // Rotaci�n at�mica: solo UN request puede "consumir" el token (revokedAt: null ? fecha)
+    const now = new Date();
+    const consumed = await this.refreshModel.findOneAndUpdate(
+      { tokenHash, revokedAt: null, expiresAt: { $gt: now } },
+      { $set: { revokedAt: now } },
+      { returnDocument: 'before' },
+    );
+
+    if (!consumed) {
+      const existing = await this.refreshModel.findOne({ tokenHash });
+      // Reutilizaci�n de un token ya rotado => posible robo: se revoca toda la familia
+      if (existing?.revokedAt) {
+        await this.revokeAllForUser(existing.userId.toString());
+        throw new UnauthorizedException('Refresh token reutilizado; sesiones revocadas');
+      }
+      throw new UnauthorizedException('Refresh token inv�lido o expirado');
     }
 
     const user = await this.usersService.findByIdWithSecrets(payload.sub);
     if (!user || !user.isActive) throw new UnauthorizedException('Usuario inactivo');
 
-    stored.revokedAt = new Date();
-    await this.refreshRepo.save(stored);
-    return this.issueTokens(user, stored.twoFactorVerified, ctx);
+    return this.issueTokens(user, consumed.twoFactorVerified, ctx);
   }
 
   async logout(refreshToken: string): Promise<void> {
-    await this.refreshRepo.update(
-      { tokenHash: this.hash(refreshToken), revokedAt: IsNull() },
-      { revokedAt: new Date() },
+    await this.refreshModel.updateOne(
+      { tokenHash: this.hash(refreshToken), revokedAt: null },
+      { $set: { revokedAt: new Date() } },
     );
   }
 
-  // ── 2FA setup (usuario autenticado) ────────────────────────────
+  // -- 2FA setup (usuario autenticado) ----------------------------
   async setupTwoFactor(userId: string): Promise<{ secret: string; otpauthUrl: string }> {
     const user = await this.usersService.findByIdWithSecrets(userId);
     if (!user) throw new UnauthorizedException();
-    if (user.twoFactorEnabled) throw new BadRequestException('2FA ya está habilitado');
+    if (user.twoFactorEnabled) throw new BadRequestException('2FA ya est� habilitado');
 
     const secret = this.twoFactorService.generateSecret();
-    await this.usersService.setTwoFactor(userId, secret, false); // pendiente de confirmación
+    await this.usersService.setTwoFactor(userId, secret, false); // pendiente de confirmaci�n
     return { secret, otpauthUrl: this.twoFactorService.buildOtpAuthUrl(user.email, secret) };
   }
 
   async enableTwoFactor(userId: string, code: string): Promise<{ enabled: true }> {
     const user = await this.usersService.findByIdWithSecrets(userId);
     if (!user?.twoFactorSecret) {
-      throw new BadRequestException('Primero inicie la configuración de 2FA');
+      throw new BadRequestException('Primero inicie la configuraci�n de 2FA');
     }
     if (!this.twoFactorService.verify(code, user.twoFactorSecret)) {
-      throw new BadRequestException('Código 2FA inválido');
+      throw new BadRequestException('C�digo 2FA inv�lido');
     }
     await this.usersService.setTwoFactor(userId, user.twoFactorSecret, true);
     await this.revokeAllForUser(userId); // fuerza re-login con segundo factor
     return { enabled: true };
   }
 
-  // ── Internos ───────────────────────────────────────────────────
+  // -- Internos ---------------------------------------------------
   private async issueTokens(
-    user: User,
+    user: UserDocument,
     twoFactorVerified: boolean,
     ctx: RequestContext,
   ): Promise<TokenPair> {
-    const roles = user.roles.map((r) => r.name as Role);
-    const permissions = [
-      ...new Set(user.roles.flatMap((r) => r.permissions.map((p) => p.code as Permission))),
-    ];
+    const userId = user.id as string;
+    const permissions = await this.usersService.resolvePermissions(user.roles);
 
     const accessPayload: JwtPayload = {
-      sub: user.id,
+      sub: userId,
       email: user.email,
       type: 'access',
-      roles,
+      roles: user.roles as Role[],
       permissions,
       twoFactorVerified,
     };
@@ -192,7 +198,7 @@ export class AuthService {
     );
 
     const refreshPayload: RefreshPayload = {
-      sub: user.id,
+      sub: userId,
       type: 'refresh',
       jti: randomUUID(),
       twoFactorVerified,
@@ -203,17 +209,15 @@ export class AuthService {
     );
 
     const { exp } = this.jwt.decode<{ exp: number }>(refreshToken);
-    await this.refreshRepo.save(
-      this.refreshRepo.create({
-        userId: user.id,
-        tokenHash: this.hash(refreshToken),
-        twoFactorVerified,
-        expiresAt: new Date(exp * 1000),
-        revokedAt: null,
-        ipAddress: ctx.ip ?? null,
-        userAgent: ctx.userAgent ?? null,
-      }),
-    );
+    await this.refreshModel.create({
+      userId: oid(userId),
+      tokenHash: this.hash(refreshToken),
+      twoFactorVerified,
+      expiresAt: new Date(exp * 1000),
+      revokedAt: null,
+      ipAddress: ctx.ip ?? null,
+      userAgent: ctx.userAgent ?? null,
+    });
 
     return { accessToken, refreshToken };
   }
@@ -230,7 +234,7 @@ export class AuthService {
       if (payload.type !== expectedType) throw new Error('type mismatch');
       return payload;
     } catch {
-      throw new UnauthorizedException('Token inválido o expirado');
+      throw new UnauthorizedException('Token inv�lido o expirado');
     }
   }
 
@@ -242,7 +246,10 @@ export class AuthService {
   }
 
   private revokeAllForUser(userId: string) {
-    return this.refreshRepo.update({ userId, revokedAt: IsNull() }, { revokedAt: new Date() });
+    return this.refreshModel.updateMany(
+      { userId: oid(userId), revokedAt: null },
+      { $set: { revokedAt: new Date() } },
+    );
   }
 
   private hash(token: string): string {

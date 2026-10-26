@@ -1,63 +1,59 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { oid } from '../../common/database/object-id';
 import { Paginated, paginate } from '../../common/dto/pagination-query.dto';
 import { QueryKycDto } from './dto/query-kyc.dto';
 import { KycDecision, ReviewKycDto } from './dto/review-kyc.dto';
-import { KycSubmission } from './entities/kyc-submission.entity';
-import { KycStatus } from './enums/kyc-status.enum';
+import { AmlResult, KycStatus } from './enums/kyc-status.enum';
+import { KycSubmission, KycSubmissionDocument } from './schemas/kyc-submission.schema';
 
-const FINAL_STATES = new Set([KycStatus.APPROVED, KycStatus.REJECTED]);
+const FINAL_STATES = [KycStatus.APPROVED, KycStatus.REJECTED];
 
 @Injectable()
 export class KycService {
-  constructor(
-    @InjectRepository(KycSubmission) private readonly repo: Repository<KycSubmission>,
-  ) {}
+  constructor(@InjectModel(KycSubmission.name) private readonly model: Model<KycSubmission>) {}
 
-  async findAll(query: QueryKycDto): Promise<Paginated<KycSubmission>> {
-    const [items, total] = await this.repo.findAndCount({
-      where: query.status ? { status: query.status } : {},
-      order: { createdAt: 'ASC' }, // cola FIFO de revisiÃ³n
-      skip: query.skip,
-      take: query.limit,
-    });
+  async findAll(query: QueryKycDto): Promise<Paginated<KycSubmissionDocument>> {
+    const filter = query.status ? { status: query.status } : {};
+    const [items, total] = await Promise.all([
+      // cola FIFO de revisión
+      this.model.find(filter).sort({ createdAt: 1 }).skip(query.skip).limit(query.limit),
+      this.model.countDocuments(filter),
+    ]);
     return paginate(items, total, query);
   }
 
-  async findOne(id: string): Promise<KycSubmission> {
-    const submission = await this.repo.findOne({
-      where: { id },
-      relations: { documents: true, screenings: true },
-    });
+  async findOne(id: string): Promise<KycSubmissionDocument> {
+    const submission = await this.model.findById(id);
     if (!submission) throw new NotFoundException('Solicitud KYC no encontrada');
     return submission;
   }
 
-  /** Toma la solicitud para revisiÃ³n (evita que dos oficiales revisen la misma). */
-  async claim(id: string, reviewerId: string): Promise<KycSubmission> {
-    const result = await this.repo.update(
-      { id, status: KycStatus.PENDING },
-      { status: KycStatus.IN_REVIEW, reviewedBy: reviewerId },
+  /** Toma la solicitud para revisión (atómico: evita que dos oficiales revisen la misma). */
+  async claim(id: string, reviewerId: string): Promise<KycSubmissionDocument> {
+    const claimed = await this.model.findOneAndUpdate(
+      { _id: id, status: KycStatus.PENDING },
+      { $set: { status: KycStatus.IN_REVIEW, reviewedBy: oid(reviewerId) } },
+      { returnDocument: 'after' },
     );
-    if (!result.affected) {
-      throw new ConflictException('La solicitud no estÃ¡ pendiente o ya fue tomada');
-    }
-    return this.findOne(id);
+    if (!claimed) throw new ConflictException('La solicitud no está pendiente o ya fue tomada');
+    return claimed;
   }
 
-  async review(id: string, dto: ReviewKycDto, reviewerId: string): Promise<KycSubmission> {
+  async review(id: string, dto: ReviewKycDto, reviewerId: string): Promise<KycSubmissionDocument> {
     const submission = await this.findOne(id);
 
-    if (FINAL_STATES.has(submission.status)) {
+    if (FINAL_STATES.includes(submission.status)) {
       throw new ConflictException('La solicitud ya fue resuelta');
     }
     if (dto.decision !== KycDecision.APPROVE && !dto.notes) {
-      throw new BadRequestException('Las notas son obligatorias al rechazar o pedir mÃ¡s informaciÃ³n');
+      throw new BadRequestException('Las notas son obligatorias al rechazar o pedir más información');
     }
-    if (dto.decision === KycDecision.APPROVE && submission.screenings.some(
-      (s) => s.result === 'CONFIRMED_MATCH',
-    )) {
+    if (
+      dto.decision === KycDecision.APPROVE &&
+      submission.screenings.some((s) => s.result === AmlResult.CONFIRMED_MATCH)
+    ) {
       throw new ConflictException('No se puede aprobar con coincidencia AML confirmada');
     }
 
@@ -67,14 +63,24 @@ export class KycService {
       [KycDecision.REQUEST_MORE_INFO]: KycStatus.MORE_INFO_REQUIRED,
     };
 
-    submission.status = nextStatus[dto.decision];
-    submission.reviewedBy = reviewerId;
-    submission.reviewedAt = new Date();
-    submission.reviewNotes = dto.notes ?? null;
-    if (dto.riskScore !== undefined) submission.riskScore = dto.riskScore;
+    const set: Record<string, unknown> = {
+      status: nextStatus[dto.decision],
+      reviewedBy: oid(reviewerId),
+      reviewedAt: new Date(),
+      reviewNotes: dto.notes ?? null,
+    };
+    if (dto.riskScore !== undefined) set.riskScore = dto.riskScore;
     if (dto.decision === KycDecision.APPROVE && dto.grantedLevel) {
-      submission.requestedLevel = dto.grantedLevel;
+      set.requestedLevel = dto.grantedLevel;
     }
-    return this.repo.save(submission);
+
+    // Condicional por estado: si otro revisor resolvió entre medias, no se pisa
+    const updated = await this.model.findOneAndUpdate(
+      { _id: id, status: { $nin: FINAL_STATES } },
+      { $set: set },
+      { returnDocument: 'after' },
+    );
+    if (!updated) throw new ConflictException('La solicitud ya fue resuelta');
+    return updated;
   }
 }

@@ -1,13 +1,11 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { AmlScreening } from './entities/aml-screening.entity';
-import { KycDocument } from './entities/kyc-document.entity';
-import { KycSubmission } from './entities/kyc-submission.entity';
+import { MongooseModule } from '@nestjs/mongoose';
 import { KycController } from './kyc.controller';
 import { KycService } from './kyc.service';
+import { KycSubmission, KycSubmissionSchema } from './schemas/kyc-submission.schema';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([KycSubmission, KycDocument, AmlScreening])],
+  imports: [MongooseModule.forFeature([{ name: KycSubmission.name, schema: KycSubmissionSchema }])],
   controllers: [KycController],
   providers: [KycService],
   exports: [KycService],

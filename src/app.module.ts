@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { MongooseModule, MongooseModuleOptions } from '@nestjs/mongoose';
 
 // Config
 import appConfig from './config/app.config';
@@ -16,7 +16,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { TypeOrmExceptionFilter } from './common/filters/typeorm-exception.filter';
+import { MongoExceptionFilter } from './common/filters/mongo-exception.filter';
 import { ResponseTransformInterceptor } from './common/interceptors/response-transform.interceptor';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
 
@@ -28,6 +28,7 @@ import { TokensModule } from './modules/tokens/tokens.module';
 import { WalletsModule } from './modules/wallets/wallets.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -41,11 +42,11 @@ import { AuditModule } from './modules/audit/audit.module';
       validate: validateEnv,
     }),
 
-    // ── Base de datos: PostgreSQL vía TypeORM ───────────────────
-    TypeOrmModule.forRootAsync({
+    // ── Base de datos: MongoDB vía Mongoose ─────────────────────
+    MongooseModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService): TypeOrmModuleOptions =>
-        config.getOrThrow<TypeOrmModuleOptions>('database'),
+      useFactory: (config: ConfigService): MongooseModuleOptions =>
+        config.getOrThrow<MongooseModuleOptions>('database'),
     }),
 
     // ── Rate limiting global ────────────────────────────────────
@@ -67,6 +68,7 @@ import { AuditModule } from './modules/audit/audit.module';
     TokensModule,
     WalletsModule,
     TransactionsModule,
+    HealthModule,
   ],
   providers: [
     // Orden de guards: throttle → JWT → roles → permisos
@@ -81,7 +83,7 @@ import { AuditModule } from './modules/audit/audit.module';
 
     // Filtros globales (el catch-all primero; los específicos después)
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
-    { provide: APP_FILTER, useClass: TypeOrmExceptionFilter },
+    { provide: APP_FILTER, useClass: MongoExceptionFilter },
   ],
 })
 export class AppModule {}

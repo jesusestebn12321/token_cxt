@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { InjectModel } from '@nestjs/mongoose';
+import { ClientSession, Model } from 'mongoose';
+import { oid } from '../../common/database/object-id';
 import { Paginated, PaginationQueryDto, paginate } from '../../common/dto/pagination-query.dto';
-import { LedgerDirection, LedgerEntry } from './entities/ledger-entry.entity';
+import { LedgerDirection, LedgerEntry, LedgerEntryDocument } from './schemas/ledger-entry.schema';
 
 export interface RecordLedgerInput {
   walletId: string;
@@ -16,23 +17,26 @@ export interface RecordLedgerInput {
 
 @Injectable()
 export class LedgerService {
-  constructor(
-    @InjectRepository(LedgerEntry) private readonly repo: Repository<LedgerEntry>,
-  ) {}
+  constructor(@InjectModel(LedgerEntry.name) private readonly model: Model<LedgerEntry>) {}
 
-  /** Debe llamarse dentro de la MISMA transacción que modifica el saldo. */
-  record(manager: EntityManager, input: RecordLedgerInput): Promise<LedgerEntry> {
-    const repo = manager.getRepository(LedgerEntry);
-    return repo.save(repo.create({ ...input, referenceId: input.referenceId ?? null }));
+  /** Debe llamarse dentro de la MISMA transacción (session) que modifica el saldo. */
+  async record(session: ClientSession, input: RecordLedgerInput): Promise<LedgerEntryDocument> {
+    const [entry] = await this.model.create(
+      [{ ...input, walletId: oid(input.walletId), referenceId: input.referenceId ?? null }],
+      { session },
+    );
+    return entry as LedgerEntryDocument;
   }
 
-  async findByWallet(walletId: string, query: PaginationQueryDto): Promise<Paginated<LedgerEntry>> {
-    const [items, total] = await this.repo.findAndCount({
-      where: { walletId },
-      order: { id: 'DESC' },
-      skip: query.skip,
-      take: query.limit,
-    });
+  async findByWallet(
+    walletId: string,
+    query: PaginationQueryDto,
+  ): Promise<Paginated<LedgerEntryDocument>> {
+    const filter = { walletId: oid(walletId) };
+    const [items, total] = await Promise.all([
+      this.model.find(filter).sort({ _id: -1 }).skip(query.skip).limit(query.limit),
+      this.model.countDocuments(filter),
+    ]);
     return paginate(items, total, query);
   }
 }

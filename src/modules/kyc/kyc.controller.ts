@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -23,14 +24,14 @@ export class KycController {
 
   @Get('submissions/:id')
   @Permissions(Permission.KYC_READ)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.kycService.findOne(id);
   }
 
   @Post('submissions/:id/claim')
   @Permissions(Permission.KYC_REVIEW)
   @AuditAction('KYC_CLAIMED', 'kyc')
-  claim(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') reviewerId: string) {
+  claim(@Param('id', ParseObjectIdPipe) id: string, @CurrentUser('id') reviewerId: string) {
     return this.kycService.claim(id, reviewerId);
   }
 
@@ -39,7 +40,7 @@ export class KycController {
   @UseGuards(TwoFactorGuard)
   @AuditAction('KYC_REVIEWED', 'kyc')
   review(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id', ParseObjectIdPipe) id: string,
     @Body() dto: ReviewKycDto,
     @CurrentUser('id') reviewerId: string,
   ) {

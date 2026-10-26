@@ -1,72 +1,84 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { oid } from '../../common/database/object-id';
 import { DecideTransactionDto } from './dto/decide-transaction.dto';
-import { Approval } from './entities/approval.entity';
-import { Transaction } from './entities/transaction.entity';
 import { ApprovalDecision, TransactionStatus } from './enums/transaction-status.enum';
 import { TransactionType } from './enums/transaction-type.enum';
+import { Transaction, TransactionDocument } from './schemas/transaction.schema';
 
 /**
- * Flujo maker-checker para depÃ³sitos y retiros:
- *  - Solo transacciones PENDING_APPROVAL pueden decidirse.
- *  - Un aprobador no puede votar dos veces (Ã­ndice Ãºnico en BD).
- *  - Un solo RECHAZO rechaza la transacciÃ³n; se necesitan `requiredApprovals` aprobaciones.
+ * Flujo maker-checker para depósitos y retiros (sin transacciones ni locks):
+ *  - El voto se añade con un update atómico condicionado a que la transacción siga
+ *    PENDING_APPROVAL y a que el aprobador NO haya votado ya (`approvals.approverId $ne`).
+ *  - Un solo RECHAZO rechaza la transacción; se necesitan `requiredApprovals` aprobaciones.
+ *  - El cambio de estado final también es condicional (idempotente ante votos concurrentes).
  *
  * TODO: al pasar a APPROVED, publicar un evento para que el worker (a) acredite el
- * ledger en depÃ³sitos o (b) firme y emita el retiro on-chain vÃ­a KMS/multisig.
+ * ledger en depósitos o (b) firme y emita el retiro on-chain vía KMS/multisig.
  */
 @Injectable()
 export class ApprovalsService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(@InjectModel(Transaction.name) private readonly model: Model<Transaction>) {}
 
   async decide(
     transactionId: string,
     dto: DecideTransactionDto,
     approverId: string,
-  ): Promise<Transaction> {
+  ): Promise<TransactionDocument> {
     if (dto.decision === ApprovalDecision.REJECTED && !dto.comment) {
       throw new BadRequestException('El comentario es obligatorio al rechazar');
     }
 
-    return this.dataSource.transaction(async (manager) => {
-      const txRepo = manager.getRepository(Transaction);
-      const approvalRepo = manager.getRepository(Approval);
+    const current = await this.model.findById(transactionId).select('type status');
+    if (!current) throw new NotFoundException('Transacción no encontrada');
+    if (current.type !== TransactionType.DEPOSIT && current.type !== TransactionType.WITHDRAWAL) {
+      throw new BadRequestException('Solo depósitos y retiros requieren aprobación manual');
+    }
 
-      const tx = await txRepo.findOne({
-        where: { id: transactionId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!tx) throw new NotFoundException('TransacciÃ³n no encontrada');
-
-      if (tx.status !== TransactionStatus.PENDING_APPROVAL) {
-        throw new ConflictException(`La transacciÃ³n estÃ¡ en estado ${tx.status}`);
-      }
-      if (tx.type !== TransactionType.DEPOSIT && tx.type !== TransactionType.WITHDRAWAL) {
-        throw new BadRequestException('Solo depÃ³sitos y retiros requieren aprobaciÃ³n manual');
-      }
-      if (await approvalRepo.exists({ where: { transactionId, approverId } })) {
-        throw new ForbiddenException('Ya registrÃ³ una decisiÃ³n para esta transacciÃ³n');
-      }
-
-      await approvalRepo.save(
-        approvalRepo.create({
-          transactionId,
-          approverId,
-          decision: dto.decision,
-          comment: dto.comment ?? null,
-        }),
+    const approver = oid(approverId);
+    const voted = await this.model.findOneAndUpdate(
+      {
+        _id: transactionId,
+        status: TransactionStatus.PENDING_APPROVAL,
+        'approvals.approverId': { $ne: approver },
+      },
+      {
+        $push: {
+          approvals: {
+            approverId: approver,
+            decision: dto.decision,
+            comment: dto.comment ?? null,
+          },
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    if (!voted) {
+      throw new ConflictException(
+        `Ya registró una decisión o la transacción ya no está pendiente (estado: ${current.status})`,
       );
+    }
 
-      if (dto.decision === ApprovalDecision.REJECTED) {
-        tx.status = TransactionStatus.REJECTED;
-        tx.failureReason = dto.comment ?? null;
-      } else {
-        const approvals = await approvalRepo.count({
-          where: { transactionId, decision: ApprovalDecision.APPROVED },
-        });
-        if (approvals >= tx.requiredApprovals) tx.status = TransactionStatus.APPROVED;
-      }
-      return txRepo.save(tx);
-    });
+    let nextStatus: TransactionStatus | null = null;
+    if (dto.decision === ApprovalDecision.REJECTED) {
+      nextStatus = TransactionStatus.REJECTED;
+    } else {
+      const approvals = voted.approvals.filter((a) => a.decision === ApprovalDecision.APPROVED).length;
+      if (approvals >= voted.requiredApprovals) nextStatus = TransactionStatus.APPROVED;
+    }
+    if (!nextStatus) return voted;
+
+    const finalized = await this.model.findOneAndUpdate(
+      { _id: transactionId, status: TransactionStatus.PENDING_APPROVAL },
+      {
+        $set: {
+          status: nextStatus,
+          failureReason: nextStatus === TransactionStatus.REJECTED ? (dto.comment ?? null) : null,
+        },
+      },
+      { returnDocument: 'after' },
+    );
+    return finalized ?? voted;
   }
 }

@@ -5,7 +5,7 @@ import { Permission } from '../../common/enums/permission.enum';
 import { AuditService } from './audit.service';
 import { QueryAuditDto } from './dto/query-audit.dto';
 
-/** Solo lectura: no existen endpoints de escritura/ediciÃ³n/borrado. */
+/** Solo lectura: no existen endpoints de escritura/edición/borrado. */
 @ApiTags('Audit')
 @ApiBearerAuth('access-token')
 @Controller('audit')

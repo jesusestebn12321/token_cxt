@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -24,7 +25,7 @@ export class UsersController {
 
   @Get(':id')
   @Permissions(Permission.USERS_READ)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.usersService.findById(id);
   }
 
@@ -39,7 +40,7 @@ export class UsersController {
   @Patch(':id')
   @Permissions(Permission.USERS_WRITE)
   @AuditAction('USER_UPDATED', 'user')
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto) {
+  update(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }
 
@@ -47,7 +48,7 @@ export class UsersController {
   @Permissions(Permission.USERS_ASSIGN_ROLES)
   @UseGuards(TwoFactorGuard)
   @AuditAction('USER_ROLES_ASSIGNED', 'user')
-  assignRoles(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignRolesDto) {
+  assignRoles(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: AssignRolesDto) {
     return this.usersService.assignRoles(id, dto);
   }
 }

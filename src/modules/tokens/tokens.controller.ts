@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -24,7 +25,7 @@ export class TokensController {
 
   @Get(':id')
   @Permissions(Permission.TOKENS_READ)
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
+  findOne(@Param('id', ParseObjectIdPipe) id: string) {
     return this.tokensService.findOne(id);
   }
 
@@ -39,7 +40,7 @@ export class TokensController {
   @Permissions(Permission.TOKENS_WRITE)
   @UseGuards(TwoFactorGuard)
   @AuditAction('TOKEN_STATUS_CHANGED', 'token')
-  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTokenStatusDto) {
+  updateStatus(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: UpdateTokenStatusDto) {
     return this.tokensService.updateStatus(id, dto);
   }
 
@@ -47,13 +48,13 @@ export class TokensController {
   @Permissions(Permission.TOKENS_CONTRACT_OPERATE)
   @UseGuards(TwoFactorGuard)
   @AuditAction('CONTRACT_REGISTERED', 'token')
-  registerContract(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RegisterContractDto) {
+  registerContract(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: RegisterContractDto) {
     return this.tokensService.registerContract(id, dto);
   }
 
   @Post('contracts/:contractId/sync')
   @Permissions(Permission.TOKENS_READ)
-  syncContract(@Param('contractId', ParseUUIDPipe) contractId: string) {
+  syncContract(@Param('contractId', ParseObjectIdPipe) contractId: string) {
     return this.tokensService.syncContract(contractId);
   }
 }
