@@ -1,0 +1,18 @@
+# Override de producción: usa la imagen publicada en GHCR por el pipeline en vez de compilar.
+#   API_IMAGE=ghcr.io/<owner>/<repo>:sha-<commit> \
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build
+services:
+  api:
+    image: ${API_IMAGE:-ghcr.io/jesusestebn12321/token_cxt:latest}
+    build: !reset null
+    environment:
+      SWAGGER_ENABLED: "false"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  seed:
+    image: ${API_IMAGE:-ghcr.io/jesusestebn12321/token_cxt:latest}
+    build: !reset null

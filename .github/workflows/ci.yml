@@ -1,0 +1,194 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Una ejecución por rama/PR; las nuevas cancelan a las anteriores
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  # ──────────────────────────────────────────────────────────────
+  # 1) Calidad: tipos estrictos, build, auditoría de dependencias
+  #    y smoke tests contra un MongoDB en memoria (replica set).
+  # ──────────────────────────────────────────────────────────────
+  test:
+    name: Typecheck, build & smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Binario de MongoDB que descarga mongodb-memory-server (se cachea entre runs)
+      MONGOMS_DOWNLOAD_DIR: ${{ github.workspace }}/.cache/mongodb-binaries
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck (strict)
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Audit production dependencies
+        run: npm run audit:prod
+
+      - name: Cache MongoDB binaries
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.MONGOMS_DOWNLOAD_DIR }}
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: mongodb-binaries-${{ runner.os }}-
+
+      - name: Smoke tests (API real + MongoDB en memoria)
+        run: npm run test:smoke --ignore-scripts
+        # --ignore-scripts evita repetir `pretest:smoke` (ya compilamos arriba)
+
+  # ──────────────────────────────────────────────────────────────
+  # 2) Imagen Docker: se construye siempre; se publica en GHCR
+  #    solo en push a main y en tags v*.
+  # ──────────────────────────────────────────────────────────────
+  docker:
+    name: Build & publish image
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.tags }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata (tags y labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build (y push si no es PR)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: production
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  # ──────────────────────────────────────────────────────────────
+  # 3) Escaneo de vulnerabilidades de la imagen publicada.
+  #    Informativo por ahora: quita `continue-on-error` para que
+  #    bloquee el pipeline cuando haya CRITICAL con fix disponible.
+  # ──────────────────────────────────────────────────────────────
+  scan:
+    name: Image vulnerability scan
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────
+  # 4) Despliegue por SSH a un servidor con Docker Compose.
+  #    Se activa creando la variable de repositorio DEPLOY_ENABLED=true
+  #    y los secretos DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH.
+  #    El environment "production" permite exigir aprobación manual.
+  # ──────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy (production)
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: production
+    steps:
+      - name: Pull & restart via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          envs: IMAGE_NAME,GITHUB_SHA
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.DEPLOY_PATH }}"
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            export API_IMAGE="${IMAGE_NAME}:sha-${GITHUB_SHA}"
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull api
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build --remove-orphans api
+            # Espera a que el healthcheck de la API pase (máx. ~2 min)
+            for i in $(seq 1 24); do
+              status=$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q api)")
+              [ "$status" = "healthy" ] && echo "API healthy" && exit 0
+              sleep 5
+            done
+            echo "La API no llegó a healthy"; docker compose logs --tail 50 api; exit 1

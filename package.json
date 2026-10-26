@@ -4,13 +4,23 @@
   "description": "Backoffice API del Exchange de Tokenización de Activos (RWA)",
   "private": true,
   "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "multer": "^2.5.0"
+  },
   "scripts": {
     "build": "nest build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "test:smoke": "nest build && node test/smoke.mjs && node test/immutable.check.mjs && node test/decimal.check.mjs",
+    "pretest:smoke": "npm run build",
+    "test:smoke": "node test/smoke.mjs && node test/immutable.check.mjs && node test/decimal.check.mjs",
+    "test:docker": "node test/docker-smoke.mjs",
     "docker:up": "docker compose up -d --build",
     "docker:dev": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build",
     "docker:down": "docker compose down",
