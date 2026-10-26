@@ -5,6 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # TypeScript 7 (port a Go) aún no es compatible con @nestjs/cli ni ts-node
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # otplib 13 cambia la API (`authenticator` ya no se exporta); migrar a mano
+      - dependency-name: otplib
+        update-types: ["version-update:semver-major"]
     groups:
       nestjs:
         patterns: ["@nestjs/*"]
