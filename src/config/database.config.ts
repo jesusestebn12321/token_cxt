@@ -1,22 +1,18 @@
 import { registerAs } from '@nestjs/config';
-import { TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { join } from 'path';
+import { MongooseModuleOptions } from '@nestjs/mongoose';
 
 export default registerAs(
   'database',
-  (): TypeOrmModuleOptions => ({
-    type: 'postgres',
-    host: process.env.DB_HOST ?? 'localhost',
-    port: parseInt(process.env.DB_PORT ?? '5432', 10),
-    username: process.env.DB_USERNAME ?? 'postgres',
-    password: process.env.DB_PASSWORD ?? 'postgres',
-    database: process.env.DB_NAME ?? 'rwa_backoffice',
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-    autoLoadEntities: true,
-    // El esquema se gestiona SOLO con migraciones. Nunca activar synchronize.
-    synchronize: false,
-    migrationsRun: false,
-    migrations: [join(__dirname, '..', 'database', 'migrations', '*{.ts,.js}')],
-    logging: process.env.DB_LOGGING === 'true',
+  (): MongooseModuleOptions => ({
+    // Las transacciones (ledger, bloqueo de fondos) requieren replica set: ?replicaSet=rs0
+    uri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017/rwa_backoffice?replicaSet=rs0',
+    // En producción crear los índices con un despliegue controlado, no al arrancar
+    autoIndex:
+      process.env.MONGODB_AUTO_INDEX !== undefined
+        ? process.env.MONGODB_AUTO_INDEX === 'true'
+        : process.env.NODE_ENV !== 'production',
+    serverSelectionTimeoutMS: 5_000,
+    retryAttempts: 3,
+    retryDelay: 3_000,
   }),
 );

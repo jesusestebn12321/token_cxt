@@ -1,11 +1,10 @@
 import 'dotenv/config';
 import * as bcrypt from 'bcryptjs';
-import dataSource from '../data-source';
+import mongoose from 'mongoose';
 import { Permission } from '../../common/enums/permission.enum';
 import { Role } from '../../common/enums/role.enum';
-import { PermissionEntity } from '../../modules/users/entities/permission.entity';
-import { RoleEntity } from '../../modules/users/entities/role.entity';
-import { User } from '../../modules/users/entities/user.entity';
+import { AccessRole, AccessRoleSchema } from '../../modules/users/schemas/role.schema';
+import { User, UserSchema } from '../../modules/users/schemas/user.schema';
 
 const P = Permission;
 
@@ -21,53 +20,46 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
 };
 
 async function run(): Promise<void> {
-  await dataSource.initialize();
-  const permRepo = dataSource.getRepository(PermissionEntity);
-  const roleRepo = dataSource.getRepository(RoleEntity);
-  const userRepo = dataSource.getRepository(User);
+  const uri = process.env.MONGODB_URI;
+  if (!uri) throw new Error('MONGODB_URI no está definida');
 
-  // 1) Permisos
-  const permsByCode = new Map<string, PermissionEntity>();
-  for (const code of Object.values(Permission)) {
-    const existing = await permRepo.findOne({ where: { code } });
-    permsByCode.set(code, existing ?? (await permRepo.save(permRepo.create({ code, description: null }))));
+  await mongoose.connect(uri);
+  const Roles = mongoose.model(AccessRole.name, AccessRoleSchema);
+  const Users = mongoose.model(User.name, UserSchema);
+  await Promise.all([Roles.init(), Users.init()]); // crea índices únicos
+
+  // 1) Roles con sus permisos (upsert idempotente)
+  for (const [name, permissions] of Object.entries(ROLE_PERMISSIONS)) {
+    await Roles.updateOne({ name }, { $set: { permissions } }, { upsert: true });
   }
+  console.log(`Roles sincronizados: ${Object.keys(ROLE_PERMISSIONS).length}`);
 
-  // 2) Roles con sus permisos
-  const rolesByName = new Map<string, RoleEntity>();
-  for (const [name, codes] of Object.entries(ROLE_PERMISSIONS)) {
-    const role =
-      (await roleRepo.findOne({ where: { name } })) ??
-      roleRepo.create({ name, description: null });
-    role.permissions = codes.map((c) => permsByCode.get(c) as PermissionEntity);
-    rolesByName.set(name, await roleRepo.save(role));
-  }
-
-  // 3) Super admin inicial (cambiar la contraseña tras el primer login)
+  // 2) Super admin inicial (cambiar la contraseña tras el primer login)
   const email = (process.env.SEED_ADMIN_EMAIL ?? '').toLowerCase();
   const password = process.env.SEED_ADMIN_PASSWORD ?? '';
   if (email && password.length >= 12) {
-    if (!(await userRepo.exists({ where: { email } }))) {
-      await userRepo.save(
-        userRepo.create({
-          email,
-          firstName: 'Super',
-          lastName: 'Admin',
-          passwordHash: await bcrypt.hash(password, 12),
-          roles: [rolesByName.get(Role.SUPER_ADMIN) as RoleEntity],
-        }),
-      );
+    if (!(await Users.exists({ email }))) {
+      await Users.create({
+        email,
+        firstName: 'Super',
+        lastName: 'Admin',
+        passwordHash: await bcrypt.hash(password, 12),
+        roles: [Role.SUPER_ADMIN],
+      });
       console.log(`Super admin creado: ${email}`);
+    } else {
+      console.log(`Super admin ya existe: ${email}`);
     }
   } else {
     console.warn('SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (>=12 chars) no definidos: se omite el super admin');
   }
 
-  await dataSource.destroy();
+  await mongoose.disconnect();
   console.log('Seed completado');
 }
 
-run().catch((err: unknown) => {
+run().catch(async (err: unknown) => {
   console.error(err);
+  await mongoose.disconnect().catch(() => undefined);
   process.exit(1);
 });

@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   Max,
   Min,
   MinLength,
@@ -30,22 +31,8 @@ class EnvironmentVariables {
 
   @IsString()
   @IsNotEmpty()
-  DB_HOST!: string;
-
-  @IsInt()
-  @IsOptional()
-  DB_PORT: number = 5432;
-
-  @IsString()
-  @IsNotEmpty()
-  DB_USERNAME!: string;
-
-  @IsString()
-  DB_PASSWORD!: string;
-
-  @IsString()
-  @IsNotEmpty()
-  DB_NAME!: string;
+  @Matches(/^mongodb(\+srv)?:\/\//, { message: 'MONGODB_URI debe empezar por mongodb:// o mongodb+srv://' })
+  MONGODB_URI!: string;
 
   @IsString()
   @MinLength(32)
