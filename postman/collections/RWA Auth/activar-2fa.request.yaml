@@ -1,0 +1,15 @@
+$kind: http-request
+name: Activar 2FA
+method: POST
+url: '{{baseUrl}}/auth/2fa/enable'
+order: 5000
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "code": "{{twoFactorCode}}"
+    }
+examples: './.resources/activar-2fa.resources/examples'

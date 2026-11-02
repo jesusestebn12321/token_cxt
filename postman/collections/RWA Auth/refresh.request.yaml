@@ -1,0 +1,17 @@
+$kind: http-request
+name: Refresh
+method: POST
+url: '{{baseUrl}}/auth/refresh'
+order: 6000
+auth:
+  type: noauth
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "refreshToken": "{{refreshToken}}"
+    }
+examples: './.resources/refresh.resources/examples'

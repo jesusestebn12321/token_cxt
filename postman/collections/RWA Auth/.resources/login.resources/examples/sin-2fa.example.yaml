@@ -1,0 +1,24 @@
+$kind: http-example
+name: Sin 2FA
+order: 1000
+request:
+  method: POST
+  url: '{{baseUrl}}/auth/login'
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "success": true,
+        "data": {
+          "requiresTwoFactor": false,
+          "accessToken": "<jwt>",
+          "refreshToken": "<jwt>"
+        },
+        "timestamp": "2026-10-27T00:00:00.000Z"
+      }

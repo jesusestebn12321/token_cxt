@@ -1,0 +1,22 @@
+$kind: http-example
+name: Credenciales inválidas
+order: 3000
+request:
+  method: POST
+  url: '{{baseUrl}}/auth/login'
+response:
+  statusCode: 401
+  statusText: Unauthorized
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: |-
+      {
+        "success": false,
+        "statusCode": 401,
+        "message": "Credenciales inválidas",
+        "path": "/api/v1/auth/login",
+        "timestamp": "2026-10-27T00:00:00.000Z"
+      }

@@ -1,0 +1,45 @@
+$kind: collection
+name: RWA Backoffice — Auth
+description: >-
+  Contrato de Auth para el frontend. baseUrl apunta a
+  http://localhost:3000/api/v1. Login, verificar 2FA y refresh son públicos.
+  El resto usa Bearer {{accessToken}}. Tras un 2xx, el script guarda
+  accessToken, refreshToken y twoFactorToken.
+variables:
+  - key: baseUrl
+    value: 'http://localhost:3000/api/v1'
+  - key: email
+    value: admin@exchange.com
+  - key: password
+    value: ''
+  - key: accessToken
+    value: ''
+  - key: refreshToken
+    value: ''
+  - key: twoFactorToken
+    value: ''
+  - key: twoFactorCode
+    value: ''
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{accessToken}}'
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      const code = pm.response.code;
+      if (code < 200 || code >= 300 || code === 204) return;
+      let body;
+      try { body = pm.response.json(); } catch (e) { return; }
+      const data = body && body.data;
+      if (!data || typeof data !== 'object') return;
+      function save(key, value) {
+        if (typeof value !== 'string' || !value) return;
+        pm.collectionVariables.set(key, value);
+        try { pm.environment.set(key, value); } catch (e) {}
+      }
+      save('accessToken', data.accessToken);
+      save('refreshToken', data.refreshToken);
+      save('twoFactorToken', data.twoFactorToken);

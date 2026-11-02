@@ -1,0 +1,6 @@
+$kind: http-request
+name: Configurar 2FA
+method: POST
+url: '{{baseUrl}}/auth/2fa/setup'
+order: 4000
+examples: './.resources/configurar-2fa.resources/examples'

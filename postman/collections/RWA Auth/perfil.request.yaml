@@ -1,0 +1,6 @@
+$kind: http-request
+name: Perfil (me)
+method: GET
+url: '{{baseUrl}}/auth/me'
+order: 3000
+examples: './.resources/perfil.resources/examples'

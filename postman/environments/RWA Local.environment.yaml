@@ -1,0 +1,30 @@
+name: RWA Local
+values:
+  - key: baseUrl
+    value: 'http://localhost:3000/api/v1'
+    enabled: true
+    type: default
+  - key: email
+    value: admin@exchange.com
+    enabled: true
+    type: default
+  - key: password
+    value: ''
+    enabled: true
+    type: secret
+  - key: accessToken
+    value: ''
+    enabled: true
+    type: secret
+  - key: refreshToken
+    value: ''
+    enabled: true
+    type: secret
+  - key: twoFactorToken
+    value: ''
+    enabled: true
+    type: secret
+  - key: twoFactorCode
+    value: ''
+    enabled: true
+    type: default

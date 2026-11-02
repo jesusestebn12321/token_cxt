@@ -1,0 +1,18 @@
+$kind: http-request
+name: Verificar 2FA
+method: POST
+url: '{{baseUrl}}/auth/2fa/verify'
+order: 2000
+auth:
+  type: noauth
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "twoFactorToken": "{{twoFactorToken}}",
+      "code": "{{twoFactorCode}}"
+    }
+examples: './.resources/verificar-2fa.resources/examples'
