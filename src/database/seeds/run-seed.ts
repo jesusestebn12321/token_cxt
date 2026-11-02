@@ -5,6 +5,7 @@ import { Permission } from '../../common/enums/permission.enum';
 import { Role } from '../../common/enums/role.enum';
 import { AccessRole, AccessRoleSchema } from '../../modules/users/schemas/role.schema';
 import { User, UserSchema } from '../../modules/users/schemas/user.schema';
+import { seedDemoUsers } from './users.seed';
 
 const P = Permission;
 
@@ -53,6 +54,9 @@ async function run(): Promise<void> {
   } else {
     console.warn('SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD (>=12 chars) no definidos: se omite el super admin');
   }
+
+  // 3) Un usuario de prueba por rol (misma contraseña, solo si SEED_USER_PASSWORD es válida)
+  await seedDemoUsers(Users, process.env.SEED_USER_PASSWORD ?? '');
 
   await mongoose.disconnect();
   console.log('Seed completado');

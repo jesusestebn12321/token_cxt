@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcryptjs';
 import { Model, mongo } from 'mongoose';
@@ -22,7 +22,8 @@ export class UsersService {
     @InjectModel(AccessRole.name) private readonly roles: Model<AccessRole>,
   ) {}
 
-  async create(dto: CreateUserDto): Promise<UserDocument> {
+  async create(dto: CreateUserDto, actorRoles: readonly string[]): Promise<UserDocument> {
+    this.assertCanGrantSuperAdmin(dto.roles, actorRoles);
     await this.assertRolesExist(dto.roles);
     try {
       const created = await this.users.create({
@@ -72,7 +73,8 @@ export class UsersService {
     return user;
   }
 
-  async assignRoles(id: string, dto: AssignRolesDto): Promise<UserDocument> {
+  async assignRoles(id: string, dto: AssignRolesDto, actorRoles: readonly string[]): Promise<UserDocument> {
+    this.assertCanGrantSuperAdmin(dto.roles, actorRoles);
     await this.assertRolesExist(dto.roles);
     const user = await this.users.findByIdAndUpdate(
       id,
@@ -119,6 +121,13 @@ export class UsersService {
       { _id: userId },
       { $set: { twoFactorSecret: secret, twoFactorEnabled: enabled } },
     );
+  }
+
+  /** Un cliente o un admin no pueden fabricar un SUPER_ADMIN. */
+  private assertCanGrantSuperAdmin(roles: readonly string[], actorRoles: readonly string[]): void {
+    if (roles.includes(Role.SUPER_ADMIN) && !actorRoles.includes(Role.SUPER_ADMIN)) {
+      throw new ForbiddenException('Solo un SUPER_ADMIN puede otorgar ese rol');
+    }
   }
 
   private async assertRolesExist(names: Role[]): Promise<void> {

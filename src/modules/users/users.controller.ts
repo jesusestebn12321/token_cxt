@@ -2,7 +2,9 @@ import { Body, Controller, Get, Param, Patch, Post, Put, Query, UseGuards } from
 import { ParseObjectIdPipe } from '../../common/pipes/parse-object-id.pipe';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AuditAction } from '../../common/decorators/audit-action.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { AuthenticatedUser } from '../../common/interfaces/jwt-payload.interface';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
 import { Permission } from '../../common/enums/permission.enum';
 import { TwoFactorGuard } from '../../common/guards/two-factor.guard';
@@ -33,8 +35,8 @@ export class UsersController {
   @Permissions(Permission.USERS_WRITE)
   @UseGuards(TwoFactorGuard)
   @AuditAction('USER_CREATED', 'user')
-  create(@Body() dto: CreateUserDto) {
-    return this.usersService.create(dto);
+  create(@Body() dto: CreateUserDto, @CurrentUser() actor: AuthenticatedUser) {
+    return this.usersService.create(dto, actor.roles);
   }
 
   @Patch(':id')
@@ -48,7 +50,11 @@ export class UsersController {
   @Permissions(Permission.USERS_ASSIGN_ROLES)
   @UseGuards(TwoFactorGuard)
   @AuditAction('USER_ROLES_ASSIGNED', 'user')
-  assignRoles(@Param('id', ParseObjectIdPipe) id: string, @Body() dto: AssignRolesDto) {
-    return this.usersService.assignRoles(id, dto);
+  assignRoles(
+    @Param('id', ParseObjectIdPipe) id: string,
+    @Body() dto: AssignRolesDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ) {
+    return this.usersService.assignRoles(id, dto, actor.roles);
   }
 }
