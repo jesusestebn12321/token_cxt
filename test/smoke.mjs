@@ -46,11 +46,11 @@ const env = {
 let server;
 try {
   console.log('\n[seed]');
-  const seed = spawnSync('node', ['dist/database/seeds/run-seed.js'], { env, encoding: 'utf8' });
+  const seed = spawnSync('node', ['dist/apps/api-gateway/database/seeds/run-seed.js'], { env, encoding: 'utf8' });
   console.log(seed.stdout + seed.stderr);
   check('seed exit 0', seed.status === 0);
 
-  server = spawn('node', ['dist/main.js'], { env });
+  server = spawn('node', ['dist/apps/api-gateway/main.js'], { env });
   let logs = '';
   server.stdout.on('data', (d) => (logs += d));
   server.stderr.on('data', (d) => (logs += d));

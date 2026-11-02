@@ -19,7 +19,7 @@ const env = {
 };
 delete env.NODE_OPTIONS;
 
-const server = spawn(process.execPath, ['dist/main.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+const server = spawn(process.execPath, ['dist/apps/api-gateway/main.js'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
 server.stdout.on('data', (d) => process.stdout.write(`[out] ${d}`));
 server.stderr.on('data', (d) => process.stderr.write(`[err] ${d}`));
 server.on('exit', (code, signal) => console.log('SERVER EXIT', code, signal));

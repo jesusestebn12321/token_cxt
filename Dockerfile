@@ -19,7 +19,9 @@ CMD ["npm", "run", "start:dev"]
 # ── Compilación ─────────────────────────────────────────────────
 FROM deps AS build
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
-COPY src ./src
+COPY apps ./apps
+COPY libs ./libs
+COPY tools ./tools
 RUN npm run build
 
 # ── Solo dependencias de producción ─────────────────────────────
@@ -47,4 +49,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/apps/api-gateway/main.js"]

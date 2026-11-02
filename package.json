@@ -11,13 +11,16 @@
     "multer": "^2.5.0"
   },
   "scripts": {
-    "build": "nest build",
+    "build": "nest build common && nest build api-gateway && nest build tokens-service && node tools/rewrite-dist-aliases.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start": "nest start api-gateway",
+    "start:dev": "nest start api-gateway --watch",
+    "start:debug": "nest start api-gateway --debug --watch",
+    "start:prod": "node dist/apps/api-gateway/main.js",
+    "start:tokens": "nest start tokens-service",
+    "start:tokens:dev": "nest start tokens-service --watch",
+    "start:tokens:prod": "node dist/apps/tokens-service/main.js",
     "pretest:smoke": "npm run build",
     "test:smoke": "node test/smoke.mjs && node test/immutable.check.mjs && node test/decimal.check.mjs",
     "test:docker": "node test/docker-smoke.mjs",
@@ -26,13 +29,14 @@
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f api",
     "docker:seed": "docker compose --profile tools run --rm seed",
-    "seed": "ts-node -r tsconfig-paths/register src/database/seeds/run-seed.ts"
+    "seed": "ts-node -r tsconfig-paths/register apps/api-gateway/src/database/seeds/run-seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.2.0",
     "@nestjs/config": "^12.0.1",
     "@nestjs/core": "^12.2.0",
     "@nestjs/jwt": "^12.0.3",
+    "@nestjs/microservices": "^12.3.2",
     "@nestjs/mongoose": "^12.0.0",
     "@nestjs/passport": "^12.0.0",
     "@nestjs/platform-express": "^12.2.0",

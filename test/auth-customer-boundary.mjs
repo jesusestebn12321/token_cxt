@@ -71,10 +71,10 @@ delete env.NODE_OPTIONS;
 let server;
 let logs = '';
 try {
-  const seed = spawnSync(process.execPath, ['dist/database/seeds/run-seed.js'], { env, encoding: 'utf8' });
+  const seed = spawnSync(process.execPath, ['dist/apps/api-gateway/database/seeds/run-seed.js'], { env, encoding: 'utf8' });
   check('seed del personal', seed.status === 0, seed.stderr);
 
-  server = spawn(process.execPath, ['dist/main.js'], { env });
+  server = spawn(process.execPath, ['dist/apps/api-gateway/main.js'], { env });
   server.stdout.on('data', (d) => (logs += d));
   server.stderr.on('data', (d) => (logs += d));
   let ready = false;

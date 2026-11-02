@@ -1,7 +1,7 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
-import { AuditLogSchema } from '../dist/modules/audit/schemas/audit-log.schema.js';
-import { LedgerEntrySchema } from '../dist/modules/wallets/schemas/ledger-entry.schema.js';
+import { AuditLogSchema } from '../dist/apps/api-gateway/modules/audit/schemas/audit-log.schema.js';
+import { LedgerEntrySchema } from '../dist/apps/api-gateway/modules/wallets/schemas/ledger-entry.schema.js';
 
 const repl = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
 await mongoose.connect(repl.getUri('imm'));

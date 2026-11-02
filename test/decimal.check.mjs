@@ -1,4 +1,4 @@
-import { normalizeDecimal } from '../dist/common/database/schema-options.js';
+import { normalizeDecimal } from '../dist/libs/common/database/schema-options.js';
 
 const cases = [
   ['150.50', '150.5'], ['0.00', '0'], ['100', '100'], ['100.25', '100.25'],

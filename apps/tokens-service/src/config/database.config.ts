@@ -1,0 +1,16 @@
+import { registerAs } from '@nestjs/config';
+import { MongooseModuleOptions } from '@nestjs/mongoose';
+
+export default registerAs(
+  'database',
+  (): MongooseModuleOptions => ({
+    uri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017/rwa_backoffice?replicaSet=rs0',
+    autoIndex:
+      process.env.MONGODB_AUTO_INDEX !== undefined
+        ? process.env.MONGODB_AUTO_INDEX === 'true'
+        : process.env.NODE_ENV !== 'production',
+    serverSelectionTimeoutMS: 5_000,
+    retryAttempts: 3,
+    retryDelay: 3_000,
+  }),
+);

@@ -95,7 +95,7 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
-    command: ["node", "dist/database/seeds/run-seed.js"]
+    command: ["node", "dist/apps/api-gateway/database/seeds/run-seed.js"]
     environment:
       <<: *app-env
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@exchange.com}
