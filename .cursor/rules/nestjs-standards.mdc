@@ -1,0 +1,49 @@
+---
+description: Arquitectura NestJS, tipado estricto, DTOs, errores y transacciones de ledger
+globs: src/**/*.ts
+alwaysApply: true
+---
+
+# NestJS — código limpio y operaciones financieras
+
+## Arquitectura
+
+- Controllers: solo transporte HTTP. Services: lógica de negocio. Persistencia: Mongoose (`@nestjs/mongoose`), nunca Prisma ni TypeORM.
+- `any` está prohibido. Tipar payloads, DTOs, respuestas y firmas con clases o interfaces explícitas.
+- Preferir `readonly`, funciones puras e inmutabilidad. Ledger y auditoría append-only usan `makeImmutable()` de `src/common/database/immutable.ts`.
+
+## Nombres
+
+- Archivos: `kebab-case` (`users.service.ts`, `create-user.dto.ts`, `jwt-auth.guard.ts`).
+- Clases: `PascalCase`. Métodos y variables: `camelCase`. Constantes y env: `UPPER_SNAKE_CASE`.
+
+## Validación
+
+- Todo body, query o param de un endpoint usa un DTO dedicado con `class-validator` y `class-transformer`.
+- El `ValidationPipe` global ya está en `src/main.ts` (`whitelist`, `forbidNonWhitelisted`, `transform`). No lo debilitar.
+- DTOs y controllers llevan Swagger: `@ApiTags()`, `@ApiOperation()`, `@ApiProperty()`, `@ApiResponse()`.
+
+```typescript
+// Bien
+export class LockFundsDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  readonly walletId!: string;
+}
+```
+
+## Errores y transacciones
+
+- Usar excepciones de Nest (`NotFoundException`, `BadRequestException`, `ConflictException`, `UnauthorizedException`). No atrapar errores para relanzar un 500 genérico.
+- Saldos, ledger, locks y tokens: transacción Mongo con `runInTransaction()` de `src/common/database/transaction.util.ts`. Pasar la `ClientSession` a cada escritura. No implementar carreras con lecturas sueltas fuera de la sesión.
+
+## Generación
+
+- Entregar archivos completos: imports reales, sin `TODO` ni placeholders.
+
+## Documentación
+
+- Consultar siempre la documentación oficial de NestJS para validación de DTOs, Guards, Microservices (RabbitMQ/gRPC) y TypeORM/Prisma.
+- URL base: https://docs.nestjs.com
+- Este repositorio persiste con Mongoose. No introducir TypeORM ni Prisma.
