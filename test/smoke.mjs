@@ -5,7 +5,7 @@ import mongoose from 'mongoose';
 import { authenticator } from 'otplib';
 
 const PORT = 3055;
-const BASE = `http://localhost:${PORT}/api/v1`;
+const BASE = `http://127.0.0.1:${PORT}/api/v1`;
 const ADMIN = { email: 'admin@exchange.com', password: 'Sup3r-Secret-Pass!' };
 
 let passed = 0;
@@ -56,7 +56,7 @@ try {
   server.stderr.on('data', (d) => (logs += d));
 
   for (let i = 0; i < 60; i++) {
-    try { if ((await fetch(`http://localhost:${PORT}/api/docs-json`)).ok) break; } catch {}
+    try { if ((await fetch(`http://127.0.0.1:${PORT}/api/docs-json`)).ok) break; } catch {}
     await new Promise((r) => setTimeout(r, 1000));
     if (i === 59) throw new Error('El servidor no arranc?:\n' + logs);
   }
