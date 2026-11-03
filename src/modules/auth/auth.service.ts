@@ -158,10 +158,7 @@ export class AuthService {
     const resetToken = randomBytes(32).toString('base64url');
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await tx.passwordResetToken.updateMany({
-        where: { userId: user.id, usedAt: null },
-        data: { usedAt: now },
-      });
+      await tx.passwordResetToken.deleteMany({ where: { userId: user.id } });
       await tx.passwordResetToken.create({
         data: {
           userId: user.id,
@@ -190,10 +187,7 @@ export class AuthService {
 
     const passwordHash = await this.usersService.hashPassword(password);
     await this.prisma.$transaction(async (tx) => {
-      const consumed = await tx.passwordResetToken.updateMany({
-        where: { id: record.id, usedAt: null, expiresAt: { gt: now } },
-        data: { usedAt: now },
-      });
+      const consumed = await tx.passwordResetToken.deleteMany({ where: { id: record.id } });
       if (consumed.count !== 1) {
         throw new BadRequestException('El enlace de recuperación no es válido o expiró');
       }
