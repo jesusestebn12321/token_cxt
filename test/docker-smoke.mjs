@@ -1,52 +1,85 @@
-// Smoke test contra el stack de Docker ya levantado (docker compose up -d && seed).
-//   API_URL=http://localhost:3000 node test/docker-smoke.mjs
-import { execFileSync } from 'node:child_process';
-import { authenticator } from 'otplib';
+// Pruebas contra el stack ya levantado: docker compose up -d && seed.
+//   node test/docker-smoke.mjs
+import { ADMIN, SUPPORT, call, reporter } from './live-api.mjs';
 
-const BASE = `${process.env.API_URL ?? 'http://localhost:3000'}/api/v1`;
-const ADMIN = {
-  email: process.env.SEED_ADMIN_EMAIL ?? 'admin@exchange.com',
-  password: process.env.SEED_ADMIN_PASSWORD ?? 'Sup3r-Secret-Pass!',
-};
-let failed = 0;
-const check = (name, ok, extra = '') => { if (!ok) failed++; console.log(`${ok ? '  OK ' : '  FAIL'} ${name} ${ok ? '' : extra}`); };
-const call = async (method, path, { token, body } = {}) => {
-  const res = await fetch(BASE + path, {
-    method,
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = await res.json().catch(() => null);
-  return { status: res.status, data: json?.data, json };
-};
-const mongosh = (js) =>
-  execFileSync('docker', ['compose', 'exec', '-T', 'mongo', 'sh', '-c',
-    `mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin "$MONGO_DB" --eval '${js}'`],
-    { encoding: 'utf8' }).trim();
+const { check, finish } = reporter();
 
-let r = await call('GET', '/health');
-check('health (API + Mongo)', r.data?.database === 'up', JSON.stringify(r.json));
+let health = await call('GET', '/health/live');
+check('health live', health.status === 200 && health.data?.status === 'ok', JSON.stringify(health.json));
 
-r = await call('POST', '/auth/login', { body: ADMIN });
-let token = r.data?.accessToken;
-check('login', !!token, JSON.stringify(r.json));
+health = await call('GET', '/health');
+check('health ready (MongoDB)', health.status === 200 && health.data?.database === 'up', JSON.stringify(health.json));
 
-r = await call('POST', '/auth/2fa/setup', { token });
-const secret = r.data?.secret;
-r = await call('POST', '/auth/2fa/enable', { token, body: { code: authenticator.generate(secret) } });
-check('2FA activado', r.data?.enabled === true, JSON.stringify(r.json));
-r = await call('POST', '/auth/login', { body: ADMIN });
-r = await call('POST', '/auth/2fa/verify', { body: { twoFactorToken: r.data.twoFactorToken, code: authenticator.generate(secret) } });
-token = r.data?.accessToken;
-check('login con 2FA', !!token, JSON.stringify(r.json));
+let denied = await call('GET', '/users');
+check('usuarios sin token', denied.status === 401, JSON.stringify(denied.json));
 
-const walletId = mongosh(`const id=new ObjectId(); db.wallets.insertOne({_id:id,customerId:new ObjectId(),isFrozen:false,createdAt:new Date(),updatedAt:new Date()}); db.balances.insertOne({walletId:id,tokenSymbol:"RWA1",available:Decimal128.fromString("100"),locked:Decimal128.fromString("0"),createdAt:new Date(),updatedAt:new Date()}); print(id.toString())`).split('\n').pop();
-r = await call('POST', `/wallets/${walletId}/locks`, { token, body: { tokenSymbol: 'RWA1', amount: '40.5', reason: 'COMPLIANCE_HOLD' } });
-check('bloqueo de fondos (transacción multi-documento)', r.status === 201, JSON.stringify(r.json));
-r = await call('GET', `/wallets/${walletId}/balances`, { token });
-check('saldos 59.5 / 40.5', r.data?.[0]?.available === '59.5' && r.data[0].locked === '40.5', JSON.stringify(r.json));
-r = await call('GET', '/audit/verify', { token });
-check('cadena de auditoría íntegra', r.data?.valid === true && r.data.checked > 0, JSON.stringify(r.json));
+let bad = await call('POST', '/auth/login', { body: { email: ADMIN.email, password: 'incorrecta-pass' } });
+check('login inválido', bad.status === 401 && bad.json?.success === false, JSON.stringify(bad.json));
 
-console.log(failed ? `\n${failed} FALLOS` : '\nDocker smoke OK');
-process.exit(failed ? 1 : 0);
+let login = await call('POST', '/auth/login', { body: ADMIN });
+const token = login.data?.accessToken;
+check('login super admin', login.status === 200 && login.data?.requiresTwoFactor === false && !!token, JSON.stringify(login.json));
+
+let me = await call('GET', '/auth/me', { token });
+check(
+  'perfil SUPER_ADMIN',
+  me.status === 200 && me.data?.email === ADMIN.email && me.data?.roles?.includes('SUPER_ADMIN') && me.data?.twoFactorVerified === false,
+  JSON.stringify(me.json),
+);
+
+let users = await call('GET', '/users?page=1&limit=20', { token });
+check(
+  'listado de usuarios',
+  users.status === 200 && users.data?.total >= 7 && users.data.items.some((item) => item.email === ADMIN.email),
+  JSON.stringify(users.json),
+);
+
+let roles = await call('GET', '/roles', { token });
+const names = Array.isArray(roles.data) ? roles.data.map((item) => item.name) : [];
+check(
+  'roles del seed',
+  roles.status === 200 && ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'OPERATIONS', 'COMPLIANCE_OFFICER', 'TREASURY', 'AUDITOR'].every((name) => names.includes(name)),
+  JSON.stringify(roles.json),
+);
+
+let catalog = await call('GET', '/roles/catalog', { token });
+check('catálogo users', catalog.status === 200 && catalog.data?.modules?.[0]?.key === 'users', JSON.stringify(catalog.json));
+
+const adminId = me.data?.id;
+let detail = await call('GET', `/users/${adminId}`, { token });
+check('detalle de usuario', detail.status === 200 && detail.data?.email === ADMIN.email, JSON.stringify(detail.json));
+
+let create = await call('POST', '/users', {
+  token,
+  body: {
+    email: 'ops@exchange.com',
+    firstName: 'Ana',
+    lastName: 'Pérez',
+    password: 'Cambio-Seguro-1',
+    roles: ['OPERATIONS'],
+  },
+});
+const createMessage = Array.isArray(create.json?.message) ? create.json.message.join(' ') : String(create.json?.message ?? '');
+check('alta de usuario exige 2FA', create.status === 403 && createMessage.includes('dos factores'), JSON.stringify(create.json));
+
+const supportLogin = await call('POST', '/auth/login', { body: SUPPORT });
+const supportToken = supportLogin.data?.accessToken;
+check('login soporte', supportLogin.status === 200 && !!supportToken, JSON.stringify(supportLogin.json));
+
+const supportUsers = await call('GET', '/users', { token: supportToken });
+check('soporte lee usuarios', supportUsers.status === 200, JSON.stringify(supportUsers.json));
+
+const supportCreate = await call('POST', '/users', {
+  token: supportToken,
+  body: {
+    email: 'otro@exchange.com',
+    firstName: 'Otro',
+    lastName: 'Usuario',
+    password: 'Cambio-Seguro-1',
+    roles: ['SUPPORT'],
+  },
+});
+const supportMessage = Array.isArray(supportCreate.json?.message) ? supportCreate.json.message.join(' ') : String(supportCreate.json?.message ?? '');
+check('soporte no crea usuarios', supportCreate.status === 403 && supportMessage.includes('Permisos insuficientes'), JSON.stringify(supportCreate.json));
+
+finish('Docker smoke');

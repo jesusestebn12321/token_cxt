@@ -1,0 +1,22 @@
+$kind: http-request
+name: Listar usuarios
+method: GET
+url: '{{baseUrl}}/users'
+order: 1000
+description: Permiso users:read. page desde 1, limit máximo 100.
+queryParams:
+  - key: page
+    value: '1'
+  - key: limit
+    value: '20'
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('listado de usuarios del seed', function () {
+        pm.response.to.have.status(200);
+        const data = pm.response.json().data;
+        pm.expect(data.total).to.be.at.least(7);
+        const emails = data.items.map((item) => item.email);
+        pm.expect(emails).to.include(pm.variables.get('email'));
+      });

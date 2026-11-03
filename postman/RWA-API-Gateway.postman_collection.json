@@ -1,0 +1,530 @@
+{
+  "info": {
+    "_postman_id": "7c1e4a2b-9d30-4f6a-b8e1-auth-rwa-backoffice",
+    "name": "RWA API Gateway",
+    "description": "Contrato HTTP del backoffice. Base `{{baseUrl}}` = `http://localhost:3000/api/v1`.\n\nHealth, login, verificar 2FA y refresh son públicos. El resto usa Bearer `{{accessToken}}`.\nCrear usuario y asignar roles exigen un JWT con `twoFactorVerified: true`.\n`password` y `userPassword` son las del seeder.\n\nÉxito: `{ success: true, data, timestamp }`. Error: `{ success: false, statusCode, message, path, timestamp }`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const code = pm.response.code;",
+          "if (code < 200 || code >= 300 || code === 204) return;",
+          "let body;",
+          "try { body = pm.response.json(); } catch (e) { return; }",
+          "const data = body && body.data;",
+          "if (!data || typeof data !== 'object') return;",
+          "function save(key, value) {",
+          "  if (typeof value !== 'string' || !value) return;",
+          "  pm.collectionVariables.set(key, value);",
+          "  try { pm.environment.set(key, value); } catch (e) {}",
+          "}",
+          "save('accessToken', data.accessToken);",
+          "save('refreshToken', data.refreshToken);",
+          "save('twoFactorToken', data.twoFactorToken);",
+          "if (!Array.isArray(data)) save('userId', data.id);",
+          "if (Array.isArray(data)) {",
+          "  const role = data.find((item) => item && item.name === 'ADMIN') || data[0];",
+          "  if (role) save('roleId', role.id);",
+          "}",
+          "if (Array.isArray(data.items)) {",
+          "  const email = pm.variables.get('email');",
+          "  const user = data.items.find((item) => item && item.email === email) || data.items[0];",
+          "  if (user) save('userId', user.id);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "email", "value": "admin@exchange.com" },
+    { "key": "password", "value": "ChangeMe!Admin1" },
+    { "key": "userPassword", "value": "ChangeMe!Users1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "twoFactorToken", "value": "" },
+    { "key": "twoFactorCode", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "roleId", "value": "" },
+    { "key": "registerEmail", "value": "registro@exchange.com" },
+    { "key": "registerPassword", "value": "ChangeMe!Registro1" },
+    { "key": "resetToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Live",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/health/live"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('liveness', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().data.status).to.eql('ok');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('readiness con MongoDB', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json().data;",
+                  "  pm.expect(data.status).to.eql('ok');",
+                  "  pm.expect(data.database).to.eql('up');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login inválido",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"incorrecta-pass\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('credenciales inválidas', function () {",
+                  "  pm.response.to.have.status(401);",
+                  "  pm.expect(pm.response.json().success).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login del super admin sin 2FA', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json().data;",
+                  "  pm.expect(data.requiresTwoFactor).to.eql(false);",
+                  "  pm.expect(data.accessToken).to.be.a('string').and.not.empty;",
+                  "  pm.expect(data.refreshToken).to.be.a('string').and.not.empty;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verificar 2FA",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"twoFactorToken\": \"{{twoFactorToken}}\",\n  \"code\": \"{{twoFactorCode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/2fa/verify",
+            "description": "Manual: hace falta el twoFactorToken del login y un código TOTP vigente."
+          }
+        },
+        {
+          "name": "Perfil (me)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('perfil del super admin', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json().data;",
+                  "  pm.expect(data.email).to.eql(pm.variables.get('email'));",
+                  "  pm.expect(data.roles).to.include('SUPER_ADMIN');",
+                  "  pm.expect(data.twoFactorVerified).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Configurar 2FA",
+          "request": { "method": "POST", "url": "{{baseUrl}}/auth/2fa/setup" },
+          "description": "Devuelve el secreto TOTP. No activa 2FA hasta /auth/2fa/enable."
+        },
+        {
+          "name": "Activar 2FA",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"{{twoFactorCode}}\"\n}" },
+            "url": "{{baseUrl}}/auth/2fa/enable"
+          },
+          "description": "Manual. Activa 2FA en el usuario y los siguientes login dejan de devolver accessToken directo."
+        },
+        {
+          "name": "Refresh",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        },
+        {
+          "name": "Registrarse",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{registerEmail}}\",\n  \"firstName\": \"Registro\",\n  \"lastName\": \"Local\",\n  \"password\": \"{{registerPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Público. Crea la cuenta sin roles. Un administrador asigna permisos después."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('registro nuevo o email ya usado', function () {",
+                  "  pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Olvidé contraseña",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{registerEmail}}\"\n}" },
+            "url": "{{baseUrl}}/auth/forgot-password",
+            "description": "Siempre responde accepted. En local, con AUTH_EXPOSE_RESET_TOKEN, data.resetToken permite el siguiente paso."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('solicitud aceptada', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().data.accepted).to.eql(true);",
+                  "});",
+                  "const token = pm.response.json().data.resetToken;",
+                  "if (token) {",
+                  "  pm.collectionVariables.set('resetToken', token);",
+                  "  try { pm.environment.set('resetToken', token); } catch (e) {}",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Restablecer contraseña",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"password\": \"{{registerPassword}}\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/reset-password"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('contraseña restablecida', function () {",
+                  "  if (!pm.variables.get('resetToken')) {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400]);",
+                  "    return;",
+                  "  }",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().data.reset).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Listar usuarios",
+          "request": { "method": "GET", "url": "{{baseUrl}}/users?page=1&limit=20" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('listado de usuarios del seed', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const data = pm.response.json().data;",
+                  "  pm.expect(data.total).to.be.at.least(7);",
+                  "  pm.expect(data.items.map((item) => item.email)).to.include(pm.variables.get('email'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle de usuario",
+          "request": { "method": "GET", "url": "{{baseUrl}}/users/{{userId}}" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('detalle', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().data.email).to.eql(pm.variables.get('email'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear usuario",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ops@exchange.com\",\n  \"firstName\": \"Ana\",\n  \"lastName\": \"Pérez\",\n  \"password\": \"Cambio-Seguro-1\",\n  \"roles\": [\"OPERATIONS\"]\n}"
+            },
+            "url": "{{baseUrl}}/users",
+            "description": "Permiso users:create y JWT con twoFactorVerified. Sin 2FA responde 403."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('alta bloqueada sin 2FA o email nuevo', function () {",
+                  "  pm.expect([201, 403, 409]).to.include(pm.response.code);",
+                  "  if (pm.response.code === 403) {",
+                  "    const message = pm.response.json().message;",
+                  "    const text = Array.isArray(message) ? message.join(' ') : String(message);",
+                  "    pm.expect(text).to.include('dos factores');",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Actualizar usuario",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Super\",\n  \"lastName\": \"Admin\",\n  \"isActive\": true\n}"
+            },
+            "url": "{{baseUrl}}/users/{{userId}}",
+            "description": "Permiso users:update. El cuerpo deja al super admin como está."
+          }
+        },
+        {
+          "name": "Asignar roles",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"roles\": [\"SUPER_ADMIN\"]\n}" },
+            "url": "{{baseUrl}}/users/{{userId}}/roles",
+            "description": "Permiso users:update y JWT con twoFactorVerified."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('asignar roles exige 2FA o confirma SUPER_ADMIN', function () {",
+                  "  pm.expect([200, 403]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Roles",
+      "item": [
+        {
+          "name": "Catálogo",
+          "request": { "method": "GET", "url": "{{baseUrl}}/roles/catalog" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('catálogo de usuarios', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const modules = pm.response.json().data.modules;",
+                  "  pm.expect(modules[0].key).to.eql('users');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Listar roles",
+          "request": { "method": "GET", "url": "{{baseUrl}}/roles" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('roles del seed', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const names = pm.response.json().data.map((item) => item.name);",
+                  "  pm.expect(names).to.include('SUPER_ADMIN');",
+                  "  pm.expect(names).to.include('ADMIN');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalle de rol",
+          "request": { "method": "GET", "url": "{{baseUrl}}/roles/{{roleId}}" },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('detalle de ADMIN', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().data.name).to.eql('ADMIN');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear rol",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"QA_READER\",\n  \"description\": \"Lectura de usuarios para pruebas\",\n  \"grants\": [{ \"module\": \"users\", \"actions\": [\"read\"] }]\n}"
+            },
+            "url": "{{baseUrl}}/roles"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('alta de rol de prueba', function () {",
+                  "  pm.expect([201, 409]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

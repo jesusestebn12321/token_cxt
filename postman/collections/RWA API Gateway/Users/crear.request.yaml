@@ -1,0 +1,33 @@
+$kind: http-request
+name: Crear usuario
+method: POST
+url: '{{baseUrl}}/users'
+order: 3000
+description: >-
+  Permiso users:create y JWT con twoFactorVerified. Sin 2FA responde 403.
+  La contraseña exige mayúscula, minúscula, número y símbolo, mínimo 12.
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "ops@exchange.com",
+      "firstName": "Ana",
+      "lastName": "Pérez",
+      "password": "Cambio-Seguro-1",
+      "roles": ["OPERATIONS"]
+    }
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('alta bloqueada sin 2FA o email nuevo', function () {
+        pm.expect([201, 403, 409]).to.include(pm.response.code);
+        if (pm.response.code === 403) {
+          const message = pm.response.json().message;
+          const text = Array.isArray(message) ? message.join(' ') : String(message);
+          pm.expect(text).to.include('dos factores');
+        }
+      });

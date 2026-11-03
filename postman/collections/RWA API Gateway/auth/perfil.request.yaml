@@ -1,0 +1,17 @@
+$kind: http-request
+name: Perfil (me)
+method: GET
+url: '{{baseUrl}}/auth/me'
+order: 3000
+examples: './.resources/perfil.resources/examples'
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('perfil del super admin', function () {
+        pm.response.to.have.status(200);
+        const data = pm.response.json().data;
+        pm.expect(data.email).to.eql(pm.variables.get('email'));
+        pm.expect(data.roles).to.include('SUPER_ADMIN');
+        pm.expect(data.twoFactorVerified).to.eql(false);
+      });

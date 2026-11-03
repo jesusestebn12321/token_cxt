@@ -1,8 +1,3 @@
-# Stack completo: MongoDB (replica set con auth) + API.
-#   Producción local : docker compose up -d --build
-#   Desarrollo       : docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-#   Seed (roles+admin): docker compose --profile tools run --rm seed
-# Las variables se leen de `.env` (ver .env.example, sección Docker).
 name: rwa-backoffice
 
 x-app-env: &app-env
@@ -13,50 +8,36 @@ x-app-env: &app-env
   SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
   THROTTLE_TTL: ${THROTTLE_TTL:-60000}
   THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
-  # Atención: si la contraseña tiene caracteres especiales hay que codificarla (URL-encode)
-  MONGODB_URI: mongodb://${MONGO_APP_USER:-rwa_app}:${MONGO_APP_PASSWORD:?Define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_DB:-rwa_backoffice}?replicaSet=rs0&authSource=${MONGO_DB:-rwa_backoffice}
-  MONGODB_AUTO_INDEX: ${MONGODB_AUTO_INDEX:-true}
-  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Define JWT_ACCESS_SECRET (mín. 32 caracteres) en .env}
+  DATABASE_URL: mongodb://${MONGO_ROOT_USER:-root}:${MONGO_ROOT_PASSWORD:?}@mongo:27017/${MONGO_DB:-rwa_backoffice}?authSource=admin&replicaSet=rs0
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?}
   JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
-  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Define JWT_REFRESH_SECRET (mín. 32 caracteres) en .env}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?}
   JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
   JWT_TWO_FACTOR_EXPIRES_IN: ${JWT_TWO_FACTOR_EXPIRES_IN:-5m}
   TWO_FACTOR_ISSUER: ${TWO_FACTOR_ISSUER:-RWA Exchange Backoffice}
-  EVM_DEFAULT_CHAIN_ID: ${EVM_DEFAULT_CHAIN_ID:-11155111}
-  EVM_RPC_URL: ${EVM_RPC_URL:-}
+  AUTH_EXPOSE_RESET_TOKEN: ${AUTH_EXPOSE_RESET_TOKEN:-false}
 
 services:
-  # Genera (una sola vez) el keyfile que exige MongoDB para replica set + autenticación
-  mongo-keyfile:
-    image: mongo:8
-    restart: "no"
-    user: root
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        [ -f /keyfile/mongo-keyfile ] || openssl rand -base64 756 > /keyfile/mongo-keyfile
-        chown 999:999 /keyfile/mongo-keyfile && chmod 400 /keyfile/mongo-keyfile
-    volumes:
-      - mongo_keyfile:/keyfile
-
   mongo:
     image: mongo:8
     restart: unless-stopped
-    command: ["--replSet", "rs0", "--keyFile", "/keyfile/mongo-keyfile", "--bind_ip_all"]
+    # Mongo 8 exige keyFile si hay auth y replica set. Se genera en el volumen, con modo 400.
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        mkdir -p /data/configdb
+        if [ ! -s /data/configdb/keyfile ]; then
+          head -c 96 /dev/urandom | base64 -w 0 > /data/configdb/keyfile
+        fi
+        chown mongodb:mongodb /data/configdb/keyfile
+        chmod 400 /data/configdb/keyfile
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile /data/configdb/keyfile
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-root}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Define MONGO_ROOT_PASSWORD en .env}
-      MONGO_DB: ${MONGO_DB:-rwa_backoffice}
-      MONGO_APP_USER: ${MONGO_APP_USER:-rwa_app}
-      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Define MONGO_APP_PASSWORD en .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?}
     volumes:
       - mongo_data:/data/db
-      - mongo_keyfile:/keyfile:ro
-      - ./docker/mongo/init:/docker-entrypoint-initdb.d:ro
-    depends_on:
-      mongo-keyfile:
-        condition: service_completed_successfully
-    # Inicia el replica set la primera vez y solo se declara "healthy" cuando hay PRIMARY
     healthcheck:
       test:
         - CMD-SHELL
@@ -75,7 +56,7 @@ services:
       target: production
     image: rwa-backoffice:latest
     restart: unless-stopped
-    init: true # reenvía señales y limpia procesos zombi (apagado ordenado)
+    init: true
     depends_on:
       mongo:
         condition: service_healthy
@@ -84,7 +65,6 @@ services:
     ports:
       - "${API_PORT:-3000}:3000"
 
-  # Tarea puntual: roles/permisos + super admin + usuarios de prueba
   seed:
     profiles: ["tools"]
     image: rwa-backoffice:latest
@@ -95,13 +75,9 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
-    command: ["node", "dist/apps/api-gateway/database/seeds/run-seed.js"]
+    command: ["node", "dist/database/seeds/run-seed.js"]
     environment:
       <<: *app-env
-      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@exchange.com}
-      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
-      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
 
 volumes:
   mongo_data:
-  mongo_keyfile:

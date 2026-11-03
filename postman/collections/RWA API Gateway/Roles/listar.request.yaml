@@ -1,0 +1,17 @@
+$kind: http-request
+name: Listar roles
+method: GET
+url: '{{baseUrl}}/roles'
+order: 2000
+description: Permiso users:read. Guarda roleId del rol ADMIN.
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('roles del seed', function () {
+        pm.response.to.have.status(200);
+        const names = pm.response.json().data.map((item) => item.name);
+        pm.expect(names).to.include.members([
+          'SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'OPERATIONS', 'COMPLIANCE_OFFICER', 'TREASURY', 'AUDITOR',
+        ]);
+      });

@@ -1,0 +1,16 @@
+$kind: http-request
+name: Live
+method: GET
+url: '{{baseUrl}}/health/live'
+order: 1000
+auth:
+  type: noauth
+description: El proceso responde. No consulta MongoDB.
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('liveness', function () {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().data.status).to.eql('ok');
+      });

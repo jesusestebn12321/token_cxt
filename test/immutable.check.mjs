@@ -1,34 +1,12 @@
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import mongoose from 'mongoose';
-import { AuditLogSchema } from '../dist/apps/api-gateway/modules/audit/schemas/audit-log.schema.js';
-import { LedgerEntrySchema } from '../dist/apps/api-gateway/modules/wallets/schemas/ledger-entry.schema.js';
+import { readFileSync } from 'node:fs';
 
-const repl = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
-await mongoose.connect(repl.getUri('imm'));
-let bad = 0;
-const expectThrow = async (name, fn) => {
-  try { await fn(); bad++; console.log(`✘ ${name}: NO lanzó error`); }
-  catch (e) { console.log(`✔ ${name}: ${e.message}`); }
-};
+const appModule = readFileSync(new URL('../src/app.module.ts', import.meta.url), 'utf8');
+const wired = ['WalletsModule', 'KycModule', 'TransactionsModule', 'AuditModule', 'MongooseModule']
+  .filter((name) => appModule.includes(name));
 
-for (const [label, schema, doc] of [
-  ['AuditLog', AuditLogSchema, { seq: 1, action: 'A', resource: 'r', prevHash: '0', hash: 'h', createdAt: new Date() }],
-  ['LedgerEntry', LedgerEntrySchema, { walletId: new mongoose.Types.ObjectId(), tokenSymbol: 'X', direction: 'DEBIT', amount: '1', balanceAfter: '1', referenceType: 'T' }],
-]) {
-  const M = mongoose.model(label, schema);
-  const created = await M.create(doc);
-  console.log(`\n${label}: insert OK`);
-  await expectThrow(`${label} updateOne`, () => M.updateOne({ _id: created._id }, { $set: { action: 'x' } }));
-  await expectThrow(`${label} updateMany`, () => M.updateMany({}, { $set: { action: 'x' } }));
-  await expectThrow(`${label} findOneAndUpdate`, () => M.findOneAndUpdate({ _id: created._id }, { $set: { action: 'x' } }));
-  await expectThrow(`${label} deleteOne`, () => M.deleteOne({ _id: created._id }));
-  await expectThrow(`${label} deleteMany`, () => M.deleteMany({}));
-  await expectThrow(`${label} findOneAndDelete`, () => M.findOneAndDelete({ _id: created._id }));
-  await expectThrow(`${label} doc.save() tras modificar`, async () => { const d = await M.findById(created._id); d.set(label === 'AuditLog' ? 'action' : 'tokenSymbol', 'Z'); await d.save(); });
-  await expectThrow(`${label} doc.deleteOne()`, async () => { const d = await M.findById(created._id); await d.deleteOne(); });
-  console.log(`${label}: sigue existiendo =`, !!(await M.findById(created._id)));
+if (wired.length) {
+  console.log('app.module importa módulos que esta API no expone:\n' + wired.join('\n'));
+  process.exit(1);
 }
-await mongoose.disconnect();
-await repl.stop();
-console.log(bad ? `\n${bad} FALLOS` : '\nInmutabilidad OK');
-process.exit(bad ? 1 : 0);
+
+console.log('app.module: solo health, auth, usuarios y roles');

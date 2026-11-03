@@ -1,0 +1,16 @@
+$kind: http-request
+name: Catálogo
+method: GET
+url: '{{baseUrl}}/roles/catalog'
+order: 1000
+description: Permiso users:read. Módulos y acciones que se pueden conceder.
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('catálogo de usuarios', function () {
+        pm.response.to.have.status(200);
+        const modules = pm.response.json().data.modules;
+        pm.expect(modules[0].key).to.eql('users');
+        pm.expect(modules[0].actions.map((item) => item.key)).to.eql(['read', 'create', 'update', 'delete']);
+      });

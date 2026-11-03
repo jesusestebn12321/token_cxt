@@ -1,0 +1,29 @@
+$kind: http-request
+name: Crear rol
+method: POST
+url: '{{baseUrl}}/roles'
+order: 4000
+description: >-
+  Permiso users:create. No exige 2FA. Si QA_READER ya existe responde 409
+  y la colección puede volver a ejecutarse.
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "name": "QA_READER",
+      "description": "Lectura de usuarios para pruebas",
+      "grants": [{ "module": "users", "actions": ["read"] }]
+    }
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('alta de rol de prueba', function () {
+        pm.expect([201, 409]).to.include(pm.response.code);
+        if (pm.response.code === 201) {
+          pm.expect(pm.response.json().data.name).to.eql('QA_READER');
+        }
+      });

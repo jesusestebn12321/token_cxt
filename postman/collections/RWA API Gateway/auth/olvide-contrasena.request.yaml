@@ -1,0 +1,32 @@
+$kind: http-request
+name: Olvidé contraseña
+method: POST
+url: '{{baseUrl}}/auth/forgot-password'
+order: 8100
+auth:
+  type: noauth
+description: >-
+  Siempre responde accepted, exista o no el email. En local, con
+  AUTH_EXPOSE_RESET_TOKEN, data.resetToken alimenta el restablecimiento.
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{registerEmail}}"
+    }
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('solicitud aceptada', function () {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().data.accepted).to.eql(true);
+      });
+      const token = pm.response.json().data.resetToken;
+      if (token) {
+        pm.collectionVariables.set('resetToken', token);
+        try { pm.environment.set('resetToken', token); } catch (e) {}
+      }

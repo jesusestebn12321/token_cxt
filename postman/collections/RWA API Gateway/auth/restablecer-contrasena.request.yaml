@@ -1,0 +1,30 @@
+$kind: http-request
+name: Restablecer contraseña
+method: POST
+url: '{{baseUrl}}/auth/reset-password'
+order: 8200
+auth:
+  type: noauth
+description: Token de un solo uso, válido 30 minutos. Invalida las sesiones abiertas.
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "token": "{{resetToken}}",
+      "password": "{{registerPassword}}"
+    }
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('contraseña restablecida', function () {
+        if (!pm.variables.get('resetToken')) {
+          pm.expect(pm.response.code).to.be.oneOf([400]);
+          return;
+        }
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().data.reset).to.eql(true);
+      });

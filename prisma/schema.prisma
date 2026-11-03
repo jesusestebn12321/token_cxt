@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+/// Usuario de backoffice. `roles` guarda los nombres del enum Role.
+model User {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  email               String    @unique
+  firstName           String
+  lastName            String
+  passwordHash        String
+  isActive            Boolean   @default(true)
+  twoFactorEnabled    Boolean   @default(false)
+  twoFactorSecret     String?
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  roles               String[]
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  locksCreated        FundLock[]      @relation("FundLockLockedBy")
+  locksReleased FundLock[]      @relation("FundLockReleasedBy")
+  kycReviews    KycSubmission[] @relation("KycReviewer")
+  approvals     TransactionApproval[]
+
+  @@map("users")
+}
+
+model AccessRole {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  description String?
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+model RefreshToken {
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String    @db.ObjectId
+  tokenHash         String    @unique
+  twoFactorVerified Boolean   @default(false)
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  ipAddress         String?
+  userAgent         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+/// Token de un solo uso para restablecer la contraseña. Se guarda solo el hash.
+model PasswordResetToken {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String    @db.ObjectId
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+/// Append-only: el servicio solo inserta. Las correcciones no reescriben filas.
+model AuditLog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  seq        Int      @unique
+  actorId    String?  @db.ObjectId
+  actorEmail String?
+  action     String
+  resource   String
+  resourceId String?
+  metadata   Json
+  ipAddress  String?
+  userAgent  String?
+  prevHash   String
+  hash       String   @unique
+  createdAt  DateTime
+
+  @@index([actorId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Wallet {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId   String   @db.ObjectId
+  label        String?
+  address      String?
+  chainId      Int?
+  isFrozen     Boolean  @default(false)
+  frozenReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  balances     Balance[]
+  locks        FundLock[]
+  ledger       LedgerEntry[]
+  transactions Transaction[]
+
+  @@index([customerId])
+  @@index([address])
+  @@map("wallets")
+}
+
+/// Importes en string decimal. El conector de MongoDB no ofrece Decimal128.
+model Balance {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  walletId    String   @db.ObjectId
+  tokenSymbol String
+  available   String   @default("0")
+  locked      String   @default("0")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@unique([walletId, tokenSymbol])
+  @@map("balances")
+}
+
+model FundLock {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  walletId     String    @db.ObjectId
+  tokenSymbol  String
+  amount       String
+  reason       String
+  notes        String?
+  lockedById   String    @db.ObjectId
+  releasedAt   DateTime?
+  releasedById String?   @db.ObjectId
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  wallet     Wallet @relation(fields: [walletId], references: [id])
+  lockedBy   User   @relation("FundLockLockedBy", fields: [lockedById], references: [id])
+  releasedBy User?  @relation("FundLockReleasedBy", fields: [releasedById], references: [id])
+
+  @@index([walletId])
+  @@index([releasedAt])
+  @@map("fund_locks")
+}
+
+model LedgerEntry {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  walletId      String   @db.ObjectId
+  tokenSymbol   String
+  direction     String
+  amount        String
+  balanceAfter  String
+  referenceType String
+  referenceId   String?
+  createdAt     DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, tokenSymbol, createdAt])
+  @@index([referenceType])
+  @@index([referenceId])
+  @@map("ledger_entries")
+}
+
+model Transaction {
+  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
+  customerId          String   @db.ObjectId
+  walletId            String   @db.ObjectId
+  type                String
+  status              String   @default("PENDING_APPROVAL")
+  tokenSymbol         String
+  amount              String
+  fee                 String   @default("0")
+  counterpartyAddress String?
+  txHash              String?
+  chainId             Int?
+  requiredApprovals   Int      @default(1)
+  riskScore           Int      @default(0)
+  failureReason       String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  wallet    Wallet                @relation(fields: [walletId], references: [id])
+  approvals TransactionApproval[]
+
+  @@index([customerId])
+  @@index([walletId])
+  @@index([txHash])
+  @@index([status, createdAt])
+  @@index([type, status, createdAt])
+  @@map("transactions")
+}
+
+model TransactionApproval {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  transactionId String   @db.ObjectId
+  approverId    String   @db.ObjectId
+  decision      String
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+  approver    User        @relation(fields: [approverId], references: [id])
+
+  @@unique([transactionId, approverId])
+  @@map("transaction_approvals")
+}
+
+model KycSubmission {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  customerId     String    @db.ObjectId
+  status         String    @default("PENDING")
+  requestedLevel String    @default("BASIC")
+  riskScore      Int?
+  countryCode    String?
+  isPep          Boolean   @default(false)
+  reviewedById   String?   @db.ObjectId
+  reviewedAt     DateTime?
+  reviewNotes    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  reviewedBy User?          @relation("KycReviewer", fields: [reviewedById], references: [id])
+  documents  KycDocument[]
+  screenings AmlScreening[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([status, createdAt])
+  @@map("kyc_submissions")
+}
+
+model KycDocument {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  submissionId String   @db.ObjectId
+  type         String
+  storageKey   String
+  mimeType     String
+  verified     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  submission KycSubmission @relation(fields: [submissionId], references: [id])
+
+  @@map("kyc_documents")
+}
+
+model AmlScreening {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  submissionId String   @db.ObjectId
+  provider     String
+  result       String
+  matches      Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  submission KycSubmission @relation(fields: [submissionId], references: [id])
+
+  @@map("aml_screenings")
+}

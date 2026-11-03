@@ -1,0 +1,6 @@
+$kind: collection
+name: Auth
+description: >-
+  Login, verificar 2FA y refresh son públicos (auth noauth en cada request).
+  Perfil, logout y activación de 2FA heredan el Bearer de la colección.
+order: 1000

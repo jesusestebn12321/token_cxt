@@ -1,0 +1,26 @@
+$kind: http-request
+name: Login inválido
+method: POST
+url: '{{baseUrl}}/auth/login'
+order: 500
+auth:
+  type: noauth
+headers:
+  - key: Content-Type
+    value: application/json
+description: Credenciales rechazadas. No guarda tokens.
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{email}}",
+      "password": "incorrecta-pass"
+    }
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('credenciales inválidas', function () {
+        pm.response.to.have.status(401);
+        pm.expect(pm.response.json().success).to.eql(false);
+      });

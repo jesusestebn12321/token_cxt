@@ -1,0 +1,6 @@
+$kind: collection
+name: Roles
+order: 3000
+description: >-
+  Catálogo y roles de acceso. Lectura users:read. Alta users:create.
+  Edición users:update. Baja users:delete. El super admin pasa todas.

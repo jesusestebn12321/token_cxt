@@ -1,0 +1,6 @@
+$kind: http-request
+name: Detalle de usuario
+method: GET
+url: '{{baseUrl}}/users/{{userId}}'
+order: 2000
+description: Permiso users:read. userId es un ObjectId de 24 hex.

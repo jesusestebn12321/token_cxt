@@ -1,0 +1,6 @@
+$kind: collection
+name: Users
+order: 2000
+description: >-
+  RBAC. Lectura users:read. Alta users:create con 2FA verificado. Edición
+  users:update. Asignar roles users:update y 2FA verificado en el JWT.

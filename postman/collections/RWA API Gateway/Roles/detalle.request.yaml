@@ -1,0 +1,14 @@
+$kind: http-request
+name: Detalle de rol
+method: GET
+url: '{{baseUrl}}/roles/{{roleId}}'
+order: 3000
+description: Permiso users:read. roleId sale del listado (ADMIN).
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('detalle de ADMIN', function () {
+        pm.response.to.have.status(200);
+        pm.expect(pm.response.json().data.name).to.eql('ADMIN');
+      });

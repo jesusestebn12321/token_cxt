@@ -1,0 +1,29 @@
+$kind: http-request
+name: Registrarse
+method: POST
+url: '{{baseUrl}}/auth/register'
+order: 8000
+auth:
+  type: noauth
+description: >-
+  Público. Crea la cuenta sin roles. Un administrador asigna permisos después.
+  Si el email ya existe responde 409.
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "email": "{{registerEmail}}",
+      "firstName": "Registro",
+      "lastName": "Local",
+      "password": "{{registerPassword}}"
+    }
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('registro nuevo o email ya usado', function () {
+        pm.expect([201, 409]).to.include(pm.response.code);
+      });

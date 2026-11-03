@@ -1,0 +1,24 @@
+$kind: http-request
+name: Asignar roles
+method: PUT
+url: '{{baseUrl}}/users/{{userId}}/roles'
+order: 5000
+description: >-
+  Permiso users:update y JWT con twoFactorVerified. Sin 2FA responde 403.
+  El cuerpo conserva SUPER_ADMIN para no cambiar el usuario del seed.
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "roles": ["SUPER_ADMIN"]
+    }
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('asignar roles exige 2FA o confirma SUPER_ADMIN', function () {
+        pm.expect([200, 403]).to.include(pm.response.code);
+      });

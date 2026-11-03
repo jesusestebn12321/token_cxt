@@ -1,0 +1,68 @@
+$kind: collection
+name: RWA API Gateway
+description: >-
+  Contrato HTTP del backoffice. Prefijo /api/v1. Health, login, verificar 2FA
+  y refresh son públicos. El resto exige Bearer {{accessToken}}. Crear usuario
+  y asignar roles exigen JWT con twoFactorVerified. La contraseña es la del
+  seeder (src/database/seeds). Tras un 2xx, el script guarda accessToken,
+  refreshToken, twoFactorToken, userId y roleId.
+variables:
+  - key: baseUrl
+    value: 'http://localhost:3000/api/v1'
+  - key: email
+    value: admin@exchange.com
+  - key: password
+    value: ChangeMe!Admin1
+  - key: userPassword
+    value: ChangeMe!Users1
+  - key: accessToken
+    value: ''
+  - key: refreshToken
+    value: ''
+  - key: twoFactorToken
+    value: ''
+  - key: twoFactorCode
+    value: ''
+  - key: userId
+    value: ''
+  - key: roleId
+    value: ''
+  - key: registerEmail
+    value: registro@exchange.com
+  - key: registerPassword
+    value: ChangeMe!Registro1
+  - key: resetToken
+    value: ''
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{accessToken}}'
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      const code = pm.response.code;
+      if (code < 200 || code >= 300 || code === 204) return;
+      let body;
+      try { body = pm.response.json(); } catch (e) { return; }
+      const data = body && body.data;
+      if (!data || typeof data !== 'object') return;
+      function save(key, value) {
+        if (typeof value !== 'string' || !value) return;
+        pm.collectionVariables.set(key, value);
+        try { pm.environment.set(key, value); } catch (e) {}
+      }
+      save('accessToken', data.accessToken);
+      save('refreshToken', data.refreshToken);
+      save('twoFactorToken', data.twoFactorToken);
+      if (!Array.isArray(data)) save('userId', data.id);
+      if (Array.isArray(data)) {
+        const role = data.find((item) => item && item.name === 'ADMIN') || data[0];
+        if (role) save('roleId', role.id);
+      }
+      if (Array.isArray(data.items)) {
+        const email = pm.variables.get('email');
+        const user = data.items.find((item) => item && item.email === email) || data.items[0];
+        if (user) save('userId', user.id);
+      }

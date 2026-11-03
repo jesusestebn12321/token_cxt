@@ -1,0 +1,18 @@
+$kind: http-request
+name: Ready
+method: GET
+url: '{{baseUrl}}/health'
+order: 2000
+auth:
+  type: noauth
+description: Readiness. 200 si MongoDB responde; 503 si la base está caída.
+scripts:
+  - type: http:afterResponse
+    language: text/javascript
+    code: |-
+      pm.test('readiness con MongoDB', function () {
+        pm.response.to.have.status(200);
+        const data = pm.response.json().data;
+        pm.expect(data.status).to.eql('ok');
+        pm.expect(data.database).to.eql('up');
+      });

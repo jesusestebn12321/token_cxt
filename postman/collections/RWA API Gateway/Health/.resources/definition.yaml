@@ -1,0 +1,5 @@
+$kind: collection
+name: Health
+order: 500
+description: >-
+  Liveness y readiness. Públicos, sin Bearer.

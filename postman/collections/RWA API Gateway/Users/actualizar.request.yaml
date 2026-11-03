@@ -1,0 +1,17 @@
+$kind: http-request
+name: Actualizar usuario
+method: PATCH
+url: '{{baseUrl}}/users/{{userId}}'
+order: 4000
+description: Permiso users:update. No exige 2FA. El cuerpo deja al super admin como está.
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "firstName": "Super",
+      "lastName": "Admin",
+      "isActive": true
+    }

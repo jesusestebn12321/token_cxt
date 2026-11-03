@@ -9,7 +9,11 @@ values:
     enabled: true
     type: default
   - key: password
-    value: ''
+    value: ChangeMe!Admin1
+    enabled: true
+    type: secret
+  - key: userPassword
+    value: ChangeMe!Users1
     enabled: true
     type: secret
   - key: accessToken
@@ -25,6 +29,14 @@ values:
     enabled: true
     type: secret
   - key: twoFactorCode
+    value: ''
+    enabled: true
+    type: default
+  - key: userId
+    value: ''
+    enabled: true
+    type: default
+  - key: roleId
     value: ''
     enabled: true
     type: default

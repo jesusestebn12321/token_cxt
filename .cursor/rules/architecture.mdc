@@ -1,0 +1,29 @@
+---
+description: Stack NestJS, Prisma y límites de persistencia
+alwaysApply: true
+---
+
+# Arquitectura
+
+- NestJS, TypeScript strict. Monorepo: `apps/` y `libs/`.
+- MongoDB solo con Prisma (`@prisma/client`, archivos `.prisma`). Replica set obligatorio para `prisma.$transaction()`.
+- gRPC entre microservicios. HTTP/JSON solo en el borde del API Gateway.
+- DTOs con `class-validator` y `class-transformer`. Sin `any`. Tipos de escritura de Prisma: `Prisma.<Model>CreateInput` y equivalentes.
+- Controllers: transporte. Services: negocio. Acceso a datos: cliente Prisma.
+
+# Persistencia
+
+- Prohibido Mongoose, `@nestjs/mongoose`, `@Schema()`, `@Prop()` e `@InjectModel()`.
+- Esquemas, modelos, migraciones y queries solo en Prisma.
+- Cuentas, saldos, wallets, tokens, ledgers o transacciones: `prisma.$transaction()` explícito.
+
+```typescript
+await this.prisma.$transaction(async (tx) => {
+  const wallet = await tx.wallet.update({
+    where: { id: walletId },
+    data: { balance: { decrement: amount } },
+  });
+  await tx.ledgerEntry.create({ data: entry });
+  return wallet;
+});
+```
